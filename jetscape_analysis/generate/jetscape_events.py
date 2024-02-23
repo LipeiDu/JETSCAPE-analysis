@@ -115,7 +115,7 @@ class GenerateJetscapeEvents(common_base.CommonBase):
                 os.makedirs(output_dir_bin)
 
             # Copy XML files to pt-hat bin directory
-            xml_master_file_copy = "{}{}".format(output_dir_bin, "jetscape_master.xml")
+            xml_master_file_copy = "{}{}".format(output_dir_bin, "jetscape_main.xml")
             cmd = "rsync {} {}".format(self.xml_master_file, xml_master_file_copy)
             os.system(cmd)
 
@@ -156,7 +156,7 @@ class GenerateJetscapeEvents(common_base.CommonBase):
             # Run Jetscape executable
             logfile_name = os.path.join(output_dir_bin, "log_{}.txt".format(dir_label))
             with open(logfile_name, "w") as logfile:
-                cmd = '{}/build/runJetscape jetscape_user.xml jetscape_master.xml'.format(self.jetscape_dir)
+                cmd = '{}/build/runJetscape jetscape_user.xml jetscape_main.xml'.format(self.jetscape_dir)
                 subprocess.run(cmd, check=True, shell=True, stdout=logfile)
                 
                 # If ascii format, generate FinalStateHadrons and FinalStatePartons

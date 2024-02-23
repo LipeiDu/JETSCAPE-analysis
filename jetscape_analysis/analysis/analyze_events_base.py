@@ -129,8 +129,8 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                 self.input_file = os.path.join(input_dir_bin, 'test_out.{}'.format(self.reader_type))
             elif self.reader_type == 'ascii':
                 self.input_file = os.path.join(input_dir_bin, 'test_out.dat')
-                self.input_file_hadrons = os.path.join(input_dir_bin, 'FinalStateHadrons.txt')
-                self.input_file_partons = os.path.join(input_dir_bin, 'FinalStatePartons.txt')
+                self.input_file_hadrons = os.path.join(input_dir_bin, 'test_out_final_state_hadrons.dat')
+                self.input_file_partons = os.path.join(input_dir_bin, 'test_out_final_state_partons.dat')
             self.run_jetscape_analysis()
 
             # Scale histograms according to pthard bins cross-section

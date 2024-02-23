@@ -40,8 +40,8 @@ class PlotResults():
         self.filename = 'AnalysisResults_{}_weakdecays{}.root'
         
         # Filenames for reference data
-        self.filename_amit = '/Users/jamesmulligan/JETSCAPE/jetscape-docker/JETSCAPE-test/PP19/Amit/AnalysisResults.root'
-        self.filename_gojko = '/Users/jamesmulligan/JETSCAPE/jetscape-docker/JETSCAPE-test/PP19/Gojko/AnalysisResults.root'
+        self.filename_amit = '/home/jetscape-user/JETSCAPE-analysis/plot/AnalysisResults_5020_weakdecaysON.root'
+        self.filename_gojko = '/home/jetscape-user/JETSCAPE-analysis/plot/AnalysisResults_5020_weakdecaysON.root'
 
         print(self)
 
