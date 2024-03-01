@@ -262,9 +262,9 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                         cross_sections.append(xsec)
             
                 elif self.reader_type == 'ascii':
-                    if 'sigmaGen' in line:
+                    if 'writersigmaGen' in line:
                         split = line.split()
-                        xsec = float(split[2])
+                        xsec = float(split[3])
                         cross_sections.append(xsec)
 
         # Return cross-section with last event's value, which is most accurate
