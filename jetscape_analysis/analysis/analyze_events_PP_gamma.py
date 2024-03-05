@@ -13,6 +13,8 @@ import sys
 import os
 import argparse
 import yaml
+import numpy as np
+from collections import defaultdict
 
 # Analysis
 import ROOT
@@ -21,11 +23,11 @@ from array import *
 # Fastjet via python (from external library heppy)
 import fastjet as fj
 
-sys.path.append('../..')
-from jetscape_analysis.analysis import analyze_events_base
+sys.path.append('.')
+from jetscape_analysis.analysis import analyze_events_base_PP_gamma
 
 ################################################################
-class AnalyzeJetscapeEvents_Example(analyze_events_base.AnalyzeJetscapeEvents_Base):
+class AnalyzeJetscapeEvents_Example(analyze_events_base_PP_gamma.AnalyzeJetscapeEvents_Base):
 
     # ---------------------------------------------------------------
     # Constructor
@@ -52,6 +54,14 @@ class AnalyzeJetscapeEvents_Example(analyze_events_base.AnalyzeJetscapeEvents_Ba
         
         self.jetR_list = config['jetR']
         self.min_jet_pt = config['min_jet_pt']
+        self.jet_eta_cut = config['jet_eta_cut']
+
+        self.min_prompt_photon_pt = config['min_prompt_photon_pt']
+        self.max_prompt_photon_pt = config['max_prompt_photon_pt']
+        self.prompt_photon_eta_cut = config['prompt_photon_eta_cut']
+        # pT ranges of x_Jgamma
+        self.prompt_photon_pt_ranges = config['prompt_photon_pt_ranges']
+        self.azimuthal_separation = config['azimuthal_separation']
 
     # ---------------------------------------------------------------
     # Initialize output objects
@@ -97,6 +107,21 @@ class AnalyzeJetscapeEvents_Example(analyze_events_base.AnalyzeJetscapeEvents_Ba
         hname = 'hPartonEtaPhi'
         setattr(self, hname, ROOT.TH2F(hname, hname, 100, -5, 5, 100, -3.2, 3.2))
 
+        # Photon histograms
+        hname = 'hPhotonPt_eta'
+        pt_bins = [9.6, 12.0, 14.4, 19.2, 24.0, 28.8, 35.2, 41.6, 48.0, 60.8, 73.6, 86.4, 103.6, 120.8, 140.0, 165.0, 250.0, 400.0]
+        n_pt_bins = len(pt_bins) - 1
+        pt_bin_array = array('d', pt_bins)
+        eta_bins = [-5., -3., -1., 1., 3., 5.]
+        n_eta_bins = len(eta_bins) - 1
+        eta_bin_array = array('d', eta_bins)
+        h = ROOT.TH2F(hname, hname, n_pt_bins, pt_bin_array, n_eta_bins, eta_bin_array)
+        h.Sumw2()
+        setattr(self, hname, h)
+        
+        hname = 'hPhotonEtaPhi'
+        setattr(self, hname, ROOT.TH2F(hname, hname, 100, -5, 5, 100, -3.2, 3.2))
+
         # Jet histograms
         for jetR in self.jetR_list:
 
@@ -108,14 +133,31 @@ class AnalyzeJetscapeEvents_Example(analyze_events_base.AnalyzeJetscapeEvents_Ba
             h = ROOT.TH2F(hname, hname, 100, -5, 5, 100, 0, 6.28)
             setattr(self, hname, h)
 
+            # x_Jgamma histogram
+            for pt_lower, pt_upper in self.prompt_photon_pt_ranges:
+                hname = 'hXjgamma_PhotonPt_{}_{}_R{}'.format(pt_lower, pt_upper, jetR)
+                xjgamma_bins = np.arange(0.0, 2.0, 0.1).tolist()  # xjgamma bins from 0.0 to 2.0 with step 0.1
+                n_xjgamma_bins = len(xjgamma_bins) - 1
+                xjgamma_bin_array = array('d', xjgamma_bins)
+                h = ROOT.TH1F(hname, hname, n_xjgamma_bins, xjgamma_bin_array)
+                h.Sumw2()
+                setattr(self, hname, h)
+
     # ---------------------------------------------------------------
     # Analyze a single event -- fill user-defined output objects
     # ---------------------------------------------------------------
     def analyze_event(self, event):
 
+        # Initialize a dictionary that will store a list of calculated values for each output observable
+        self.observable_dict_event = defaultdict(list)
+
         # Get list of hadrons from the event, and fill some histograms
         hadrons = event.hadrons(min_track_pt=self.min_track_pt)
         self.fill_hadron_histograms(hadrons)
+
+        # Get list of photons from the event, and fill some histograms
+        photons = [hadron for hadron in hadrons if hadron.pid == 22]
+        self.fill_photon_histograms(photons)
 
         # Get list of final-state partons from the event, and fill some histograms
         partons = event.final_partons()
@@ -125,12 +167,15 @@ class AnalyzeJetscapeEvents_Example(analyze_events_base.AnalyzeJetscapeEvents_Ba
         fj_hadrons = []
         fj_hadrons = self.fill_fastjet_constituents(hadrons)
 
+        # Initialize a dictionary to store jets selected for each jetR
+        selected_jets = {}
+
         # Loop through specified jet R
         for jetR in self.jetR_list:
 
             # Set jet definition and a jet selector
             jet_def = fj.JetDefinition(fj.antikt_algorithm, jetR)
-            jet_selector = fj.SelectorPtMin(self.min_jet_pt) & fj.SelectorAbsRapMax(5.)
+            jet_selector = fj.SelectorPtMin(self.min_jet_pt) & fj.SelectorAbsRapMax(self.jet_eta_cut)
             if self.debug_level > 0:
                 print('jet definition is:', jet_def)
                 print('jet selector is:', jet_selector, '\n')
@@ -142,8 +187,85 @@ class AnalyzeJetscapeEvents_Example(analyze_events_base.AnalyzeJetscapeEvents_Ba
             jets = fj.sorted_by_pt(cs.inclusive_jets())
             jets_selected = jet_selector(jets)
 
+            # Save the selected jets for this jetR
+            selected_jets[jetR] = jets_selected
+
             # Fill some jet histograms
             self.fill_jet_histograms(jets_selected, jetR)
+
+        # prompt photon isolation
+        # TODO: isolation to be added
+        isolated_prompt_photon = self.find_isolated_prompt_photon(photons)
+
+        # gamma-jet analysis
+        if isolated_prompt_photon is not None:
+
+            photon_momentum = isolated_prompt_photon.momentum
+
+            # Loop over pT ranges
+            for pt_lower, pt_upper in self.prompt_photon_pt_ranges:
+                # Select isolated prompt photon within the current pT range
+                if pt_lower < photon_momentum.pt() < pt_upper:
+                    # Loop through specified jet R
+                    for jetR in self.jetR_list:
+
+                        # pair up photon and jets, calculate xJgamma
+                        self.pair_photon_jet(photon_momentum, selected_jets[jetR], jetR, pt_lower, pt_upper)
+
+                        # Fill some x_Jgamma histograms
+                        self.fill_xjgamma_histogram(jetR, pt_lower, pt_upper)
+
+    #---------------------------------------------------------------
+    # Place holder for isolated prompt photon; to be improved to include more sophisticated isolation criteria
+    #---------------------------------------------------------------
+    def find_isolated_prompt_photon(self, photons):
+        # Filter photons with kinematic cuts
+        selected_photons = [photon for photon in photons if
+                            self.min_prompt_photon_pt < photon.momentum.pt() < self.max_prompt_photon_pt and
+                            np.abs(photon.momentum.eta()) < self.prompt_photon_eta_cut]
+
+        # Ensure that there are selected photons
+        if not selected_photons:
+            return None
+
+        # Initialize variables to store information about the leading prompt photon
+        leading_photon = None
+        leading_photon_pt = 0.0
+
+        # Loop through the selected photons to find the one with the highest pt
+        for photon in selected_photons:
+            pt = photon.momentum.pt()
+            if pt > leading_photon_pt:
+                leading_photon = photon
+                leading_photon_pt = pt
+
+        return leading_photon
+
+    # ---------------------------------------------------------------
+    # Pair the selected photon with a jet based on some criteria
+    # ---------------------------------------------------------------
+    def pair_photon_jet(self, photon_momentum, selected_jets, jetR, pt_lower, pt_upper):
+
+        photon_pt = photon_momentum.pt()
+        photon_eta = photon_momentum.eta()
+        photon_phi = photon_momentum.phi()  # [-pi, pi]
+
+        # Ensure photon_phi is within [0, 2*pi]
+        if photon_phi < 0:
+            photon_phi += 2 * np.pi
+
+        for jet in selected_jets:
+
+            jet_pt = jet.pt()
+            jet_eta = jet.eta()
+            jet_phi = jet.phi()  # [0, 2pi]
+
+            delta_phi = (photon_phi-jet_phi + np.pi) % (2 * np.pi) - np.pi # within [0, pi]
+
+            if np.abs(delta_phi) > self.azimuthal_separation:
+
+                x_jgamma = jet_pt / photon_pt
+                self.observable_dict_event[f'gammajet_xjgamma_pt_{pt_lower}_{pt_upper}_R{jetR}'].append(x_jgamma)
 
     # ---------------------------------------------------------------
     # Fill hadron histograms
@@ -216,6 +338,37 @@ class AnalyzeJetscapeEvents_Example(analyze_events_base.AnalyzeJetscapeEvents_Ba
 
             getattr(self, 'hJetPt_eta_R{}'.format(jetR)).Fill(jet_pt, jet_eta)
             getattr(self, 'hJetEtaPhi_R{}'.format(jetR)).Fill(jet_eta, jet_phi)
+
+    # ---------------------------------------------------------------
+    # Fill photon histograms
+    # ---------------------------------------------------------------
+    def fill_photon_histograms(self, photons):
+    
+        # Loop through photons
+        for photon in photons:
+
+            # Fill some basic photon info
+            momentum = photon.momentum
+            pt = momentum.pt()
+            eta = momentum.eta()
+            phi = momentum.phi()  # [-pi, pi]
+
+            # Fill photon histograms
+            getattr(self, 'hPhotonPt_eta').Fill(pt, eta, 1/pt) # Fill with weight 1/pt, to form 1/pt dN/dpt
+            getattr(self, 'hPhotonEtaPhi').Fill(eta, phi)
+
+    # ---------------------------------------------------------------
+    # Fill the xjgamma histogram using the results stored in observable_dict_event
+    # ---------------------------------------------------------------
+    def fill_xjgamma_histogram(self, jetR, pt_lower, pt_upper):
+
+        # Retrieve xjgamma values for the given jetR
+        xjgamma_values = self.observable_dict_event[f'gammajet_xjgamma_pt_{pt_lower}_{pt_upper}_R{jetR}']
+        
+        # Fill histogram with xjgamma values
+        for xjgamma in xjgamma_values:
+            getattr(self, 'hXjgamma_PhotonPt_{}_{}_R{}'.format(pt_lower, pt_upper, jetR)).Fill(xjgamma)
+
 
 ##################################################################
 if __name__ == "__main__":

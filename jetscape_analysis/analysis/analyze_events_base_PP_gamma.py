@@ -80,7 +80,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # Main processing function
     # ---------------------------------------------------------------
     def analyze_jetscape_events(self):
-    
+
         # Store list of parameter labels
         parameter_labels = [self.parameter_scan_dict[key]['label'] for key in self.parameter_scan_dict]
 
@@ -140,6 +140,10 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
         # Merge all pthard bins into a single output file
         if self.merge_histograms:
+            final_file = os.path.join(self.output_dir, "AnalysisResultsFinal.root")
+            if os.path.exists(final_file):
+                os.remove(final_file)
+
             cmd = "hadd {}AnalysisResultsFinal.root {}*/AnalysisResults.root".format(self.output_dir, self.output_dir)
             subprocess.run(cmd, check=True, shell=True)
 
