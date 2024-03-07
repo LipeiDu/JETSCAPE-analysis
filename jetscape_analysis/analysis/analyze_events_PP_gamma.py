@@ -59,8 +59,9 @@ class AnalyzeJetscapeEvents_Example(analyze_events_base_PP_gamma.AnalyzeJetscape
         self.min_prompt_photon_pt = config['min_prompt_photon_pt']
         self.max_prompt_photon_pt = config['max_prompt_photon_pt']
         self.prompt_photon_eta_cut = config['prompt_photon_eta_cut']
-        # pT ranges of x_Jgamma
+        # x_jgamma parameters
         self.prompt_photon_pt_ranges = config['prompt_photon_pt_ranges']
+        self.xjgamma_bin_lists = config['xjgamma_bin_lists']
         self.azimuthal_separation = config['azimuthal_separation']
 
     # ---------------------------------------------------------------
@@ -122,6 +123,14 @@ class AnalyzeJetscapeEvents_Example(analyze_events_base_PP_gamma.AnalyzeJetscape
         hname = 'hPhotonEtaPhi'
         setattr(self, hname, ROOT.TH2F(hname, hname, 100, -5, 5, 100, -3.2, 3.2))
 
+        # Prompt photon histogram
+        hname = 'hPromptPhoton_Pt'
+        setattr(self, hname, ROOT.TH1F(hname, hname, len(self.prompt_photon_pt_ranges), 0, len(self.prompt_photon_pt_ranges)))
+        # Set the bin labels
+        for i, (pt_lower, pt_upper) in enumerate(self.prompt_photon_pt_ranges, start=1):
+            bin_label = '{:.1f}-{:.1f}'.format(pt_lower, pt_upper)
+            getattr(self, hname).GetXaxis().SetBinLabel(i, bin_label)
+
         # Jet histograms
         for jetR in self.jetR_list:
 
@@ -134,11 +143,12 @@ class AnalyzeJetscapeEvents_Example(analyze_events_base_PP_gamma.AnalyzeJetscape
             setattr(self, hname, h)
 
             # x_Jgamma histogram
-            for pt_lower, pt_upper in self.prompt_photon_pt_ranges:
-                hname = 'hXjgamma_PhotonPt_{}_{}_R{}'.format(pt_lower, pt_upper, jetR)
-                xjgamma_bins = np.arange(0.0, 2.0, 0.1).tolist()  # xjgamma bins from 0.0 to 2.0 with step 0.1
-                n_xjgamma_bins = len(xjgamma_bins) - 1
+            for pt_range, xjgamma_bins in zip(self.prompt_photon_pt_ranges, self.xjgamma_bin_lists):
+
+                pt_lower, pt_upper = pt_range
+                hname = 'hXjgamma_PhotonPt_{:.1f}_{:.1f}_R{}'.format(pt_lower, pt_upper, jetR)
                 xjgamma_bin_array = array('d', xjgamma_bins)
+                n_xjgamma_bins = len(xjgamma_bins) - 1
                 h = ROOT.TH1F(hname, hname, n_xjgamma_bins, xjgamma_bin_array)
                 h.Sumw2()
                 setattr(self, hname, h)
@@ -206,13 +216,17 @@ class AnalyzeJetscapeEvents_Example(analyze_events_base_PP_gamma.AnalyzeJetscape
             for pt_lower, pt_upper in self.prompt_photon_pt_ranges:
                 # Select isolated prompt photon within the current pT range
                 if pt_lower < photon_momentum.pt() < pt_upper:
+
+                    # Increment the corresponding pT range (pt_lower, pt_upper) in the histogram
+                    self.fill_prompt_photon_histograms(pt_lower, pt_upper)
+
                     # Loop through specified jet R
                     for jetR in self.jetR_list:
 
-                        # pair up photon and jets, calculate xJgamma
+                        # pair up photon and jets, calculate xjgamma
                         self.pair_photon_jet(photon_momentum, selected_jets[jetR], jetR, pt_lower, pt_upper)
 
-                        # Fill some x_Jgamma histograms
+                        # Fill some x_jgamma histograms
                         self.fill_xjgamma_histogram(jetR, pt_lower, pt_upper)
 
     #---------------------------------------------------------------
@@ -358,6 +372,18 @@ class AnalyzeJetscapeEvents_Example(analyze_events_base_PP_gamma.AnalyzeJetscape
             getattr(self, 'hPhotonEtaPhi').Fill(eta, phi)
 
     # ---------------------------------------------------------------
+    # Fill prompt photon histograms
+    # ---------------------------------------------------------------
+    def fill_prompt_photon_histograms(self, pt_lower, pt_upper):
+        
+        # Find the bin index based on pt_lower and pt_upper values
+        bin_label = '{:.1f}-{:.1f}'.format(pt_lower, pt_upper)
+        hPromptPhoton_Pt = getattr(self, 'hPromptPhoton_Pt')
+        bin_index = hPromptPhoton_Pt.GetXaxis().FindBin(bin_label)
+
+        hPromptPhoton_Pt.Fill(bin_index-1)
+
+    # ---------------------------------------------------------------
     # Fill the xjgamma histogram using the results stored in observable_dict_event
     # ---------------------------------------------------------------
     def fill_xjgamma_histogram(self, jetR, pt_lower, pt_upper):
@@ -367,7 +393,7 @@ class AnalyzeJetscapeEvents_Example(analyze_events_base_PP_gamma.AnalyzeJetscape
         
         # Fill histogram with xjgamma values
         for xjgamma in xjgamma_values:
-            getattr(self, 'hXjgamma_PhotonPt_{}_{}_R{}'.format(pt_lower, pt_upper, jetR)).Fill(xjgamma)
+            getattr(self, 'hXjgamma_PhotonPt_{:.1f}_{:.1f}_R{}'.format(pt_lower, pt_upper, jetR)).Fill(xjgamma)
 
 
 ##################################################################

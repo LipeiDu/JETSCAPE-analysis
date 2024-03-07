@@ -30,7 +30,10 @@ merge_histograms: True
 min_track_pt: 0.01       # Used for both hadron/parton and jet histograms
 abs_track_eta_max: 1.0   # Used only for hadron/parton histograms -- jet finding uses all hadrons as constituents
 jetR: [0.4]
+
 # ATLAS PLB 789 (2019) 167-190
+# https://www.hepdata.net/record/ins1694678
+ATLAS_gamma_Jet_5020: 'data/GAMMA_JET/5020/ATLAS/HEPData-ins1694678-v1-root.root'
 # eta_max for jet finding hadrons not implemented yet
 min_jet_pt: 31.6
 jet_eta_cut: 2.8
@@ -38,9 +41,15 @@ azimuthal_separation: 2.74889 # 7pi/8
 min_prompt_photon_pt: 63.1
 max_prompt_photon_pt: 200.
 prompt_photon_eta_cut: 2.37
+
 prompt_photon_pt_ranges: # pT ranges with measurements reported
   - [63.1, 79.6]
   - [79.6, 100]
   - [100, 158]
   - [158, 200]
 
+xjgamma_bin_lists: # xJgamma bins with data reported, should match the order of the pt ranges above
+  - [0.50119, 0.56234, 0.63096, 0.70795, 0.79433, 0.89125, 1.0, 1.12202, 1.25893, 1.41254, 1.58489, 1.77828, 1.99526]
+  - [0.39811, 0.44668, 0.50119, 0.56234, 0.63096, 0.70795, 0.79433, 0.89125, 1.0, 1.12202, 1.25893, 1.41254, 1.58489, 1.77828, 1.99526]
+  - [0.31623, 0.35481, 0.39811, 0.44668, 0.50119, 0.56234, 0.63096, 0.70795, 0.79433, 0.89125, 1.0, 1.12202, 1.25893, 1.41254, 1.58489, 1.77828, 1.99526]
+  - [0.19953, 0.25119, 0.31623, 0.39811, 0.50119, 0.63096, 0.79433, 1.0, 1.25893, 1.58489, 1.99526]

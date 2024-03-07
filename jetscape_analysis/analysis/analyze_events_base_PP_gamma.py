@@ -94,6 +94,8 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
         # Loop through all parameter combinations
         for index, parameter_combination in enumerate(parameter_combinations):
+
+            self.event_id = 0
         
             self.pt_hat_bin = int(index / n_combinations_per_pthat)
             if self.pt_hat_bin < len(self.pt_hat_bins) - 1:
