@@ -84,22 +84,22 @@ def main():
     # Note: plotting script may have warnings about missing histograms, this is usually due to some missing centrality bins for certain design points
     download_runinfo = False
     download_histograms = False
-    merge_histograms = False
-    aggregate_histograms = False
-    plot_and_save_histograms = False
-    write_tables = False
+    merge_histograms = True
+    aggregate_histograms = True
+    plot_and_save_histograms = True
+    write_tables = True
     plot_global_QA = True
 
     # Edit these parameters
-    stat_xsede_2021_dir = '/home/james/jetscape-docker/STAT-XSEDE-2021'
-    jetscape_analysis_dir = '/home/james/jetscape-docker/JETSCAPE-analysis'
-    local_base_outputdir = '/rstorage/jetscape/STAT-Bayesian/Analysis1/20230116'
+    stat_xsede_2021_dir = '/home/jetscape-user/STAT-XSEDE-2021'
+    jetscape_analysis_dir = '/home/jetscape-user/JETSCAPE-analysis'
+    local_base_outputdir = '/home/jetscape-user/aggregation_test'
     force_download = False
     n_cores = 20
 
     # You may need to edit these for a future analysis -- but can leave as is for now
-    analysis_name = 'Analysis1'
-    facilities = ['bridges2', 'expanse']
+    analysis_name = 'Analysis2'
+    facilities = ['osc']
 
     #-----------------------------------------------------------------
 
@@ -139,7 +139,7 @@ def main():
                             print('Force download enabled -- re-download all runinfo files...')
 
                         download_script = os.path.join(stat_xsede_2021_dir, f'scripts/js_stat_xsede_steer/download_from_OSN.py')
-                        cmd = f'python {download_script} -s {facility}/{run}/ -d {run_info_download_location} -f {run}_info.yaml'
+                        cmd = f'python3 {download_script} -s {facility}/{run}/ -d {run_info_download_location} -f {run}_info.yaml'
                         subprocess.run(cmd, check=True, shell=True)
 
                 # Add the run_info block to the run_dictionary
@@ -197,7 +197,7 @@ def main():
                     n_histograms_local = len([h for h in os.listdir(histogram_dir) if '.root' in h])
 
                     script = os.path.join(stat_xsede_2021_dir, f'scripts/js_stat_xsede_steer/count_files_on_OSN.py')
-                    cmd = f'python {script} -s {facility}/{run}/ -f histograms'
+                    cmd = f'python3 {script} -s {facility}/{run}/ -f histograms'
                     proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE)
                     output = proc.stdout.read()
                     n_histograms_expected = int(output.split()[-1])
@@ -213,7 +213,7 @@ def main():
                         print(f'Histogram dir already exists, but n_histograms_expected ({n_histograms_expected}) does not equal n_histograms_local ({n_histograms_local}), so we will redownload.')
 
                     download_script = os.path.join(stat_xsede_2021_dir, f'scripts/js_stat_xsede_steer/download_from_OSN.py')
-                    cmd = f'python {download_script} -s {facility}/{run}/ -d {histogram_download_location} -f histograms'
+                    cmd = f'python3 {download_script} -s {facility}/{run}/ -d {histogram_download_location} -f histograms'
                     subprocess.run(cmd, check=True, shell=True)
                     print()
 
@@ -333,7 +333,7 @@ def main():
             if system == 'pp':
                 outputdir = os.path.join(local_base_outputdir, f'plot/{sqrts}_{system}')       
                 inputfile = os.path.join(outputdir_base, f'{sqrts}_{system}/histograms.root')       
-                cmd = f'python {jetscape_analysis_dir}/plot/plot_results_STAT.py'
+                cmd = f'python3 {jetscape_analysis_dir}/plot/plot_results_STAT.py'
                 cmd += f' -c {jetscape_analysis_dir}/config/STAT_{sqrts}.yaml'
                 cmd += f' -i {inputfile}'
                 cmd += f' -o {outputdir}'
@@ -348,7 +348,7 @@ def main():
                 inputfile = os.path.join(outputdir_base, f'{sqrts}_{system}_{parametrization_type}/histograms_design_point_{design_point_index}.root')  
                 pp_reference_filename = os.path.join(local_base_outputdir, f'plot/{sqrts}_pp/final_results.root') 
                 if os.path.exists(pp_reference_filename):
-                    cmd = f'python {jetscape_analysis_dir}/plot/plot_results_STAT.py'
+                    cmd = f'python3 {jetscape_analysis_dir}/plot/plot_results_STAT.py'
                     cmd += f' -c {jetscape_analysis_dir}/config/STAT_{sqrts}.yaml'
                     cmd += f' -i {inputfile}'
                     cmd += f' -r {pp_reference_filename}'
