@@ -450,7 +450,7 @@ class HistogramResults(common_base.CommonBase):
 
                         if np.isclose(jet_R, block['jet_R'][0]):
                             column_name = f'{observable_type}_{observable}_trigger_pt{jet_collection_label}'
-                            bins = np.array(block['low_trigger_range'] + block['high_trigger_range']).astype(np.float)
+                            bins = np.array(block['low_trigger_range'] + block['high_trigger_range']).astype(float)
                             self.histogram_observable(column_name=column_name, bins=bins, centrality=centrality, observable=observable)
 
                     elif self.sqrts == 200:

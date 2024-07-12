@@ -25,7 +25,7 @@ import itertools
 import re
 
 # Base class
-sys.path.append('.')
+sys.path.append('..')
 from jetscape_analysis.base import common_base
 
 ################################################################

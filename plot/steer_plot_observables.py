@@ -62,19 +62,19 @@ def main():
 
     # Specify input directory containing final_state_hadrons files
     sqrts = 5020
-    final_state_hadron_dir = '/Users/jamesmulligan/JETSCAPE/jetscape-docker/xsede_stampede/Run0001'
+    final_state_hadron_dir = '/home/jetscape-user/JETSCAPE-STAT-output'
     final_state_hadron_files = [file for file in os.listdir(final_state_hadron_dir) if 'jetscape' in file]
     system = final_state_hadron_files[0].split('_')[1]
 
     # If AA, supply pp reference results in order to construct RAA
-    pp_reference_filename = '/Users/jamesmulligan/JETSCAPE/jetscape-docker/xsede_stampede/Run0001/plot/final_results.root'
+    pp_reference_filename = '/home/jetscape-user/JETSCAPE-STAT-output/pp/histograms.root'
 
     # Note: the construction of observables and histograms is usually done on XSEDE,
     #       and only the merging/plotting step is needed to be run locally
-    construct_observables = True
+    construct_observables = False
     construct_histograms = False
     merge_histograms = False
-    plot_histograms = False
+    plot_histograms = True
 
     #-----------------------------------------------------------------
     # Loop through final_state_hadron files, and construct observables
@@ -87,7 +87,7 @@ def main():
 
         for file in os.listdir(final_state_hadron_dir):
             if 'final_state_hadrons' in file:
-                cmd = f'python jetscape_analysis/analysis/analyze_events_STAT.py -c config/STAT_{sqrts}.yaml -i {final_state_hadron_dir}/{file} -o {observables_dir}'
+                cmd = f'python3 jetscape_analysis/analysis/analyze_events_STAT.py -c config/STAT_{sqrts}.yaml -i {final_state_hadron_dir}/{file} -o {observables_dir}'
                 print(cmd)
                 subprocess.run(cmd, check=True, shell=True)
 
@@ -100,7 +100,7 @@ def main():
 
         for file in os.listdir(inputdir):
             if 'observables' in file:
-                cmd = f'python plot/histogram_results_STAT.py -c config/STAT_{sqrts}.yaml -i {inputdir}/{file} -o {outputdir}'
+                cmd = f'python3 plot/histogram_results_STAT.py -c config/STAT_{sqrts}.yaml -i {inputdir}/{file} -o {outputdir}'
                 print(cmd)
                 subprocess.run(cmd, check=True, shell=True)
 
@@ -129,9 +129,9 @@ def main():
         inputdir = os.path.join(final_state_hadron_dir, 'plot')
         fname = f'histograms_{system}_{sqrts}_merged.root'
         if system == 'pp':
-            cmd = f'python plot/plot_results_STAT.py -c config/STAT_{sqrts}.yaml -i {inputdir}/{fname}'
+            cmd = f'python3 plot/plot_results_STAT.py -c config/STAT_{sqrts}.yaml -i {inputdir}/{fname}'
         else:
-            cmd = f'python plot/plot_results_STAT.py -c config/STAT_{sqrts}.yaml -i {inputdir}/{fname} -r {pp_reference_filename}'
+            cmd = f'python3 plot/plot_results_STAT.py -c config/STAT_{sqrts}.yaml -i {inputdir}/{fname} -r {pp_reference_filename}'
         print(cmd)
         subprocess.run(cmd, check=True, shell=True)
 

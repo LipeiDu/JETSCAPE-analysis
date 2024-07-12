@@ -936,6 +936,7 @@ class PlotResults(common_base.CommonBase):
         legend = ROOT.TLegend(0.4,0.55,0.75,0.81)
         self.plot_utils.setup_legend(legend, 0.045, sep=-0.1)
 
+        self.skip_AA_ratio = True
         if not self.skip_AA_ratio:
             self.bins = np.array(h_pp.GetXaxis().GetXbins())
         else:
