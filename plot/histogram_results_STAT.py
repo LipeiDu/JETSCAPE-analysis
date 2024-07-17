@@ -253,7 +253,7 @@ class HistogramResults(common_base.CommonBase):
                     self.observable_centrality_list.append(centrality)
 
                 # v2 ATLAS and CMS
-                if observable == 'v2_atlas' or observable == 'v2_cms' :
+                if observable == 'v2_atlas' or observable == 'v2_cms' or observable == 'v2_alice':
                     # Construct appropriate binning
                     bins = self.plot_utils.bins_from_config(block, self.sqrts, observable_type, observable, centrality, centrality_index)
                     if not bins.any():
@@ -548,7 +548,7 @@ class HistogramResults(common_base.CommonBase):
         h = ROOT.TH1F(hname, hname, len(bins)-1, bins)
         h.Sumw2()
 
-        if "hadron_correlations_v2" in hname:
+        if "hadron_correlations_v2" or "dijet_v2" in hname:
             # for v2 calculation only
             hname2 = f'h_{column_name}_denom_{centrality}{pt_suffix}'
             h2 = ROOT.TH1F(hname2, hname2, len(bins)-1, bins)

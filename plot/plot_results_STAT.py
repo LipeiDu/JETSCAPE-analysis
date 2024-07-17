@@ -98,6 +98,8 @@ class PlotResults(common_base.CommonBase):
     def plot_results(self):
 
         self.analysis = 'Analysis1'
+
+        self.plot_hadron_correlation_observables(observable_type='hadron_correlations')
         
         if self.analysis == 'hadron_jet_RAA':
 
@@ -117,8 +119,8 @@ class PlotResults(common_base.CommonBase):
             if 'inclusive_jet' in self.config:
                 self.plot_jet_observables(observable_type='inclusive_jet')
 
-            if 'dijet' in self.config:
-                self.plot_jet_observables(observable_type='dijet')
+        if 'dijet' in self.config:
+            self.plot_jet_observables(observable_type='dijet')
 
         self.plot_event_qa()
 
@@ -163,6 +165,7 @@ class PlotResults(common_base.CommonBase):
 
                 #for hadron v2
                 if 'v2' in observable:
+                    self.suffix = ''
                     self.init_observable(observable_type, observable, block, centrality, centrality_index)
                     # Histogram observable
                     self.plot_observable(observable_type, observable, centrality)
@@ -292,7 +295,7 @@ class PlotResults(common_base.CommonBase):
         self.observable_settings = {}
 
         # Initialize common settings into class members
-        self.init_common_settings(observable, block)
+        self.init_common_settings(observable_type, observable, block)
 
         #-----------------------------------------------------------
         # Initialize data distribution into self.observable_settings
@@ -318,13 +321,23 @@ class PlotResults(common_base.CommonBase):
                                                                                 self.observable_settings['data_distribution'], include_tgraph_uncertainties=False)
             else:
                 self.observable_settings['ratio'] = None
-        if 'v2' in observable and self.is_AA and self.observable_settings[f'jetscape_distribution']:
+
+        #-----------------------------------------------------------
+        # For v2 of hadrons -- form ratio of JETSCAPE to data and load into self.observable_settings
+        if observable_type in ['hadron', 'hadron_correlations'] and 'v2' in observable and self.is_AA and self.observable_settings[f'jetscape_distribution']:
             self.observable_settings['ratio'] =  self.plot_utils.divide_histogram_by_tgraph(self.observable_settings[f'jetscape_distribution'], self.observable_settings['data_distribution'])
+
+        #-----------------------------------------------------------
+        # For v2 of jets -- form ratio of JETSCAPE to data and load into self.observable_settings; currently observable_settings['ratio'] is overwritten, need fix; LDU
+        if observable_type in ['dijet'] and 'v2' in observable and self.is_AA:
+            for jet_collection_label in self.jet_collection_labels:
+                if self.observable_settings[f'jetscape_distribution{jet_collection_label}']:
+                    self.observable_settings['ratio'] =  self.plot_utils.divide_histogram_by_tgraph(self.observable_settings[f'jetscape_distribution{jet_collection_label}'], self.observable_settings['data_distribution'])
 
     #-------------------------------------------------------------------------------------------
     # Initialize from settings from config file into class members
     #-------------------------------------------------------------------------------------------
-    def init_common_settings(self, observable, block):
+    def init_common_settings(self, observable_type, observable, block):
 
         self.xtitle = block['xtitle']
         if 'eta_cut' in block:
@@ -349,11 +362,6 @@ class PlotResults(common_base.CommonBase):
             self.logy = block['logy']
         else:
             self.logy = False
-
-        #for v2
-        if 'v2' in observable:
-            self.y_ratio_min = -0.5
-            self.y_ratio_max = 1.99
 
         if self.is_AA:
             if 'ytitle_AA' in block:
@@ -385,6 +393,13 @@ class PlotResults(common_base.CommonBase):
             if 'logy_pp' in block:
                 self.logy = block["logy_pp"]
 
+        #for v2
+        if 'v2' in observable:
+            self.y_min = -0.05
+            self.y_max = 0.3
+            self.y_ratio_min = -0.5
+            self.y_ratio_max = 1.99
+
         if 'skip_pp' in block:
             self.skip_pp = block['skip_pp']
         else:
@@ -404,8 +419,8 @@ class PlotResults(common_base.CommonBase):
 
         # Flag to plot hole histogram (for hadron histograms only)
         if self.is_AA:
-            self.subtract_holes = observable in ['pt_ch_alice', 'pt_pi_alice', 'pt_pi0_alice', 'pt_ch_cms',
-                                                 'pt_ch_atlas', 'pt_pi0_phenix', 'pt_ch_star', 'v2_atlas', 'v2_cms',
+            self.subtract_holes = observable_type in ['hadron', 'hadron_correlations'] and observable in ['pt_ch_alice', 'pt_pi_alice', 'pt_pi0_alice', 'pt_ch_cms',
+                                                 'pt_ch_atlas', 'pt_pi0_phenix', 'pt_ch_star', 'v2_atlas', 'v2_cms', 'v2_alice',
                                                  'dihadron_star']
         else:
             self.subtract_holes = False
@@ -469,6 +484,7 @@ class PlotResults(common_base.CommonBase):
             self.get_histogram(observable_type, observable, centrality, pt_suffix=pt_suffix)
             self.scale_histogram(observable_type, observable, centrality, pt_suffix=pt_suffix, self_normalize=self_normalize)
             self.post_process_histogram(observable_type, observable, block, centrality, centrality_index)
+
     #-------------------------------------------------------------------------------------------
     # Get histogram and add to self.observable_settings
     #  - In AA case, also add hole histogram
@@ -574,6 +590,7 @@ class PlotResults(common_base.CommonBase):
 
         #--------------------------------------------------
         # (2) Scale all histograms by bin width
+        # It's okay to do this for v2, since this recale is done for both num and deno, and we will take the ratios and this will cancel out
         h.Scale(1., 'width')
 
         #--------------------------------------------------
@@ -724,8 +741,30 @@ class PlotResults(common_base.CommonBase):
     # Perform any additional manipulations on scaled histograms
     #-------------------------------------------------------------------------------------------
     def post_process_histogram(self, observable_type, observable, block, centrality, centrality_index: int, collection_label=''):
-        if 'v2' in observable and self.is_AA:
-            # hadron v2
+
+        # jet v2
+        if observable_type in ['dijet'] and 'v2' in observable and self.is_AA:
+            
+            h = self.observable_settings[f'jetscape_distribution{collection_label}']
+            if h:
+                h_num_name = f'h_{observable_type}_{observable}{self.suffix}{collection_label}_{centrality}'
+                h_denom_name = f'h_{observable_type}_{observable}{self.suffix}{collection_label}_denom_{centrality}'
+
+                self.observable_settings[f'jetscape_distribution{collection_label}'] = self.input_file.Get(h_num_name).Clone()
+
+                for i in range(0,self.input_file.Get(h_num_name).GetNbinsX()):
+                    h_num_i = self.input_file.Get(h_num_name).GetBinContent(i)
+                    h_denom_i = self.input_file.Get(h_denom_name).GetBinContent(i)
+                    if h_denom_i == 0.0:
+                        h_denom_i = -99.0
+                        h_num_i = 0.0
+                    self.observable_settings[f'jetscape_distribution{collection_label}'].SetBinContent(i, h_num_i/h_denom_i)
+
+                self.observable_settings[f'jetscape_distribution{collection_label}'].SetName(f'jetscape_distribution_{observable_type}_{observable}_{centrality}')
+
+        # hadron v2
+        if observable_type in ['hadron', 'hadron_correlations'] and 'v2' in observable and self.is_AA:
+            
             h = self.observable_settings[f'jetscape_distribution{collection_label}']
             if h:
                 h_num_name = f'h_{observable_type}_{observable}_{centrality}'
@@ -743,12 +782,10 @@ class PlotResults(common_base.CommonBase):
                     h_denom_holes_i = self.input_file.Get(h_denom_name_holes).GetBinContent(i)
                     if h_denom_i == 0.0:
                         h_denom_i = -99.0
-                        h_denom_holes_i =0.0
+                        h_denom_holes_i = 0.0
+                        h_num_i = 0.0
                     self.observable_settings[f'jetscape_distribution'].SetBinContent(i, (h_num_i - h_num_holes_i)/(h_denom_i - h_denom_holes_i) )
                     self.observable_settings[f'jetscape_distribution_unsubtracted'].SetBinContent(i,h_num_i/h_denom_i)
-
-                self.observable_settings[f'jetscape_distribution'].Print()
-                self.observable_settings[f'jetscape_distribution_unsubtracted'].Print()
 
                 self.observable_settings[f'jetscape_distribution'].SetName(f'jetscape_distribution_{observable_type}_{observable}_{centrality}')
                 self.observable_settings[f'jetscape_distribution_unsubtracted'].SetName(f'jetscape_distribution_unsubtracted_{observable_type}_{observable}_{centrality}')
@@ -831,9 +868,23 @@ class PlotResults(common_base.CommonBase):
 
         label = f'{observable_type}_{observable}{self.suffix}_{centrality}{pt_suffix}'
 
-        if 'v2' in observable:
-            # for hadron v2
+        # for hadron v2
+        if observable_type in ['hadron', 'hadron_correlations'] and 'v2' in observable:
+            
             if self.observable_settings[f'jetscape_distribution']:
+                self.plot_distribution_and_ratio(observable_type, observable, centrality, label, pt_suffix=pt_suffix, logy=logy)
+            return
+
+        # for jet v2
+        if observable_type in ['dijet'] and 'v2' in observable:
+
+            # Check if at least one 'jetscape_distribution{collection_label}' is not empty
+            has_non_empty_distribution = any(
+                self.observable_settings.get(f'jetscape_distribution{collection_label}') 
+                for collection_label in self.jet_collection_labels
+            )
+            
+            if has_non_empty_distribution:
                 self.plot_distribution_and_ratio(observable_type, observable, centrality, label, pt_suffix=pt_suffix, logy=logy)
             return
 
@@ -907,13 +958,14 @@ class PlotResults(common_base.CommonBase):
 
         # Assemble the list of hole subtraction variations
         keys_to_plot = [key for key in self.observable_settings.keys() if 'jetscape_distribution' in key and 'holes' not in key]
+
         self.jetscape_legend_label = {}
         self.jetscape_legend_label['jetscape_distribution'] = 'JETSCAPE'
         self.jetscape_legend_label['jetscape_distribution_unsubtracted'] = 'JETSCAPE (unsubtracted)'
         self.jetscape_legend_label['jetscape_distribution_shower_recoil'] = 'JETSCAPE (shower+recoil)'
         self.jetscape_legend_label['jetscape_distribution_shower_recoil_unsubtracted'] = 'JETSCAPE (shower+recoil, unsubtracted)'
         self.jetscape_legend_label['jetscape_distribution_negative_recombiner'] = 'JETSCAPE (negative recombiner)'
-        self.jetscape_legend_label['jetscape_distribution_constituent_subtraction'] = 'JETSCAPE (CS)'
+        self.jetscape_legend_label['jetscape_distribution_constituent_subtraction'] = 'JETSCAPE (constituent subtraction)'
 
         if not self.observable_settings[keys_to_plot[0]]:
             print(f'WARNING: skipping {label} since data is missing')
@@ -1017,6 +1069,21 @@ class PlotResults(common_base.CommonBase):
     #-------------------------------------------------------------------------------------------
     def plot_distribution_and_ratio(self, observable_type, observable, centrality, label, pt_suffix='', logy = False):
 
+        # Assemble the list of hole subtraction variations
+        keys_to_plot = [key for key in self.observable_settings.keys() if 'jetscape_distribution' in key and 'holes' not in key]
+
+        self.jetscape_legend_label = {}
+        self.jetscape_legend_label['jetscape_distribution'] = 'JETSCAPE'
+        self.jetscape_legend_label['jetscape_distribution_unsubtracted'] = 'JETSCAPE (unsubtracted)'
+        self.jetscape_legend_label['jetscape_distribution_shower_recoil'] = 'JETSCAPE (shower+recoil)'
+        self.jetscape_legend_label['jetscape_distribution_shower_recoil_unsubtracted'] = 'JETSCAPE (shower+recoil, unsubtracted)'
+        self.jetscape_legend_label['jetscape_distribution_negative_recombiner'] = 'JETSCAPE (negative recombiner)'
+        self.jetscape_legend_label['jetscape_distribution_constituent_subtraction'] = 'JETSCAPE (constituent subtraction)'
+
+        if not self.observable_settings[keys_to_plot[0]]:
+            print(f'WARNING: skipping {label} since data is missing')
+            return
+
         c = ROOT.TCanvas('c', 'c', 600, 650)
         c.Draw()
         c.cd()
@@ -1034,19 +1101,20 @@ class PlotResults(common_base.CommonBase):
             pad1.SetLogy()
         pad1.cd()
 
-        legend = ROOT.TLegend(0.58,0.6,0.75,0.75)
-        self.plot_utils.setup_legend(legend, 0.055, sep=-0.1)
+        legend = ROOT.TLegend(0.4,0.55,0.75,0.81)
+        self.plot_utils.setup_legend(legend, 0.045, sep=-0.1)
 
         legend_ratio = ROOT.TLegend(0.25,0.8,0.45,1.07)
         self.plot_utils.setup_legend(legend_ratio, 0.07, sep=-0.1)
 
-        self.bins = np.array(self.observable_settings[f'jetscape_distribution'].GetXaxis().GetXbins())
+        self.bins = np.array(self.observable_settings[keys_to_plot[0]].GetXaxis().GetXbins())
         myBlankHisto = ROOT.TH1F('myBlankHisto','Blank Histogram', 1, self.bins[0], self.bins[-1])
         myBlankHisto.SetNdivisions(505)
         myBlankHisto.SetXTitle(self.xtitle)
         myBlankHisto.SetYTitle(self.ytitle)
         myBlankHisto.SetMaximum(self.y_max)
         myBlankHisto.SetMinimum(self.y_min) # Don't draw 0 on top panel
+        myBlankHisto.GetYaxis().SetRangeUser(self.y_min, self.y_max)
         myBlankHisto.GetYaxis().SetTitleSize(0.08)
         myBlankHisto.GetYaxis().SetTitleOffset(1.1)
         myBlankHisto.GetYaxis().SetLabelSize(0.06)
@@ -1095,24 +1163,26 @@ class PlotResults(common_base.CommonBase):
             legend.AddEntry(self.observable_settings['data_distribution'], 'Data', 'PE')
 
         # Draw JETSCAPE
-        self.output_dict[f'jetscape_distribution_{label}'] =  self.observable_settings[f'jetscape_distribution']
-        if self.observable_settings[f'jetscape_distribution'].GetNbinsX() > 1:
-            self.observable_settings[f'jetscape_distribution'].SetFillColor(self.jetscape_color[0])
-            self.observable_settings[f'jetscape_distribution'].SetFillColorAlpha(self.jetscape_color[0], self.jetscape_alpha[0])
-            self.observable_settings[f'jetscape_distribution'].SetFillStyle(1001)
-            self.observable_settings[f'jetscape_distribution'].SetMarkerSize(0.)
-            self.observable_settings[f'jetscape_distribution'].SetMarkerStyle(0)
-            self.observable_settings[f'jetscape_distribution'].SetLineWidth(0)
-            self.observable_settings[f'jetscape_distribution'].DrawCopy('E3 same')
-        elif self.observable_settings[f'jetscape_distribution'].GetNbinsX() == 1:
-            self.observable_settings[f'jetscape_distribution'].SetMarkerSize(self.marker_size)
-            self.observable_settings[f'jetscape_distribution'].SetMarkerStyle(self.data_marker+1)
-            self.observable_settings[f'jetscape_distribution'].SetMarkerColor(self.jetscape_color[0])
-            self.observable_settings[f'jetscape_distribution'].SetLineStyle(self.line_style)
-            self.observable_settings[f'jetscape_distribution'].SetLineWidth(self.line_width)
-            self.observable_settings[f'jetscape_distribution'].SetLineColor(self.jetscape_color[0])
-            self.observable_settings[f'jetscape_distribution'].DrawCopy('PE same')
-        legend.AddEntry(self.observable_settings[f'jetscape_distribution'], 'JETSCAPE', 'f')
+        for i,key in enumerate(keys_to_plot):
+            self.output_dict[f'{key}_{label}'] = self.observable_settings[key]
+            if self.observable_settings[key]:
+                if self.observable_settings[key].GetNbinsX() > 1:
+                    self.observable_settings[key].SetFillColor(self.jetscape_color[i])
+                    self.observable_settings[key].SetFillColorAlpha(self.jetscape_color[i], self.jetscape_alpha[i])
+                    self.observable_settings[key].SetFillStyle(self.jetscape_fillstyle[i])
+                    self.observable_settings[key].SetMarkerSize(0.)
+                    self.observable_settings[key].SetMarkerStyle(0)
+                    self.observable_settings[key].SetLineWidth(0)
+                    self.observable_settings[key].DrawCopy('E3 same')
+                elif self.observable_settings[key].GetNbinsX() == 1:
+                    self.observable_settings[key].SetMarkerSize(self.marker_size)
+                    self.observable_settings[key].SetMarkerStyle(self.data_marker+1)
+                    self.observable_settings[key].SetMarkerColor(self.jetscape_color[i])
+                    self.observable_settings[key].SetLineStyle(self.line_style)
+                    self.observable_settings[key].SetLineWidth(self.line_width)
+                    self.observable_settings[key].SetLineColor(self.jetscape_color[i])
+                    self.observable_settings[key].DrawCopy('PE same')
+                legend.AddEntry(self.observable_settings[key], self.jetscape_legend_label[key], 'f')
 
         legend.Draw()
 
@@ -1173,8 +1243,8 @@ class PlotResults(common_base.CommonBase):
         if self.skip_pp_ratio:
             text = 'skip ratio plot -- pp/AA binning mismatch'
             text_latex.DrawLatex(x, 0.93, text)
-
-        c.SaveAs(os.path.join(self.output_dir, f'{self.hname}{self.file_format}'))
+        hname = f'h_{observable_type}_{observable}{self.suffix}_{centrality}{pt_suffix}'
+        c.SaveAs(os.path.join(self.output_dir, f'{hname}{self.file_format}'))
         c.Close()
 
     #-------------------------------------------------------------------------------------------

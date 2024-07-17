@@ -168,6 +168,7 @@ class AnalyzeJetscapeEvents_STAT(analyze_events_base_STAT.AnalyzeJetscapeEvents_
                                       hadrons_positive_charged, hadrons_negative_charged,
                                       pid_hadrons_positive, pid_hadrons_negative,
                                       pid_hadrons_positive_charged, pid_hadrons_negative_charged,
+                                      event_plane_angle,
                                       jet_collection_label=jet_collection_label)
 
     # ---------------------------------------------------------------
@@ -297,6 +298,13 @@ class AnalyzeJetscapeEvents_STAT(analyze_events_base_STAT.AnalyzeJetscapeEvents_
                         if abs(eta) < self.hadron_correlation_observables['v2_cms']['eta_cut']:
                             if abs(pid) in [11, 13, 211, 321, 2212, 3222, 3112, 3312, 3334]:
                                 self.observable_dict_event[f'hadron_correlations_v2_cms{suffix}'].append([pt,CosineDPhi])
+                if self.centrality_accepted(self.hadron_correlation_observables['v2_alice']['centrality']):
+                    pt_min = self.hadron_correlation_observables['v2_alice']['pt'][0]
+                    pt_max = self.hadron_correlation_observables['v2_alice']['pt'][1]
+                    if pt > pt_min and pt < pt_max:
+                        if abs(eta) < self.hadron_correlation_observables['v2_alice']['eta_cut']:
+                            if abs(pid) in [11, 13, 211, 321, 2212, 3222, 3112, 3312, 3334]:
+                                self.observable_dict_event[f'hadron_correlations_v2_alice{suffix}'].append([pt,CosineDPhi])
 
 
         # NOTE: The loop order here is different than other functions because without some optimization,
@@ -399,6 +407,7 @@ class AnalyzeJetscapeEvents_STAT(analyze_events_base_STAT.AnalyzeJetscapeEvents_
                              hadrons_positive_charged, hadrons_negative_charged,
                              pid_hadrons_positive, pid_hadrons_negative,
                              pid_hadrons_positive_charged, pid_hadrons_negative_charged,
+                             event_plane_angle,
                              jet_collection_label=''):
 
         # Set the appropriate lists of hadrons to input to the jet finding
@@ -422,19 +431,22 @@ class AnalyzeJetscapeEvents_STAT(analyze_events_base_STAT.AnalyzeJetscapeEvents_
             # Full jets
             self.find_jets_and_fill(hadrons_for_jet_finding, hadrons_negative,
                                     pid_hadrons_positive, pid_hadrons_negative,
-                                    jet_def, jet_selector, jetR, jet_collection_label, full_jet=True)
+                                    jet_def, jet_selector, jetR, jet_collection_label, 
+                                    event_plane_angle, full_jet=True)
 
             # Charged jets
             self.find_jets_and_fill(hadrons_for_jet_finding_charged, hadrons_negative_charged,
                                     pid_hadrons_positive_charged, pid_hadrons_negative_charged,
-                                    jet_def, jet_selector, jetR, jet_collection_label, full_jet=False)
+                                    jet_def, jet_selector, jetR, jet_collection_label, 
+                                    event_plane_angle, full_jet=False)
 
     # ---------------------------------------------------------------
     # Find jets and fill histograms -- either full or charged
     # ---------------------------------------------------------------
     def find_jets_and_fill(self, hadrons_for_jet_finding, hadrons_negative,
                            pid_hadrons_positive, pid_hadrons_negative,
-                           jet_def, jet_selector, jetR, jet_collection_label, full_jet=True):
+                           jet_def, jet_selector, jetR, jet_collection_label, 
+                           event_plane_angle,full_jet=True):
 
         # Fill inclusive jets
         cs = fj.ClusterSequence(hadrons_for_jet_finding, jet_def)
@@ -449,7 +461,7 @@ class AnalyzeJetscapeEvents_STAT(analyze_events_base_STAT.AnalyzeJetscapeEvents_
         # Fill dijet observables -- full jets only
         if full_jet:
             if self.dijet_observables:
-                self.fill_dijet_observables(jets_selected, hadrons_negative, jetR,
+                self.fill_dijet_observables(jets_selected, hadrons_negative, jetR, event_plane_angle,
                                             jet_collection_label=jet_collection_label)
 
         # Fill semi-inclusive jet correlations -- charged jets only
@@ -1287,7 +1299,7 @@ class AnalyzeJetscapeEvents_STAT(analyze_events_base_STAT.AnalyzeJetscapeEvents_
     # ---------------------------------------------------------------
     # Fill dijet observables
     # ---------------------------------------------------------------
-    def fill_dijet_observables(self, jets_selected, fj_hadrons_negative, jetR, jet_collection_label=''):
+    def fill_dijet_observables(self, jets_selected, fj_hadrons_negative, jetR, event_plane_angle, jet_collection_label=''):
 
         if self.sqrts == 2760:
 
@@ -1328,6 +1340,41 @@ class AnalyzeJetscapeEvents_STAT(analyze_events_base_STAT.AnalyzeJetscapeEvents_
                                 if leading_jet_pt > pt_min:
                                     xj = subleading_jet_pt / leading_jet_pt
                                     self.observable_dict_event[f'dijet_xj_atlas_R{jetR}{jet_collection_label}'].append([leading_jet_pt, xj])
+
+        if self.sqrts == 5020:
+
+            # ATLAS v2
+            #   Hole treatment:
+            #    - For shower_recoil case, correct jet pt by subtracting holes within R
+            #    - For negative_recombiner case, no subtraction is needed
+            #    - For constituent_subtraction, no subtraction is needed
+            # for hadron correlation, a suffix label is used, separating holes; LDU
+            if self.centrality_accepted(self.dijet_observables['v2_atlas']['centrality']):
+                pt_min = self.dijet_observables['v2_atlas']['pt'][0]
+                pt_max = self.dijet_observables['v2_atlas']['pt'][-1]
+
+                if jetR in self.dijet_observables['v2_atlas']['jet_R']:
+
+                        # First, find jets passing kinematic cuts
+                        for jet in jets_selected:
+
+                            # jet_pt = None
+
+                            if jet_collection_label in ['_shower_recoil']:
+                                # Get the corrected jet pt by subtracting the negative recoils within R
+                                jet_pt = jet.pt()
+                                if fj_hadrons_negative:
+                                    for temp_hadron in fj_hadrons_negative:
+                                        if jet.delta_R(temp_hadron) < jetR:
+                                            jet_pt -= temp_hadron.pt()
+                            else:
+                                 jet_pt = jet.pt()
+
+                            if abs(jet.eta()) < (self.dijet_observables['v2_atlas']['eta_cut']):
+                                if pt_min < jet_pt < pt_max:
+                                    CosineDPhi = np.cos(2.0*(jet.phi() - event_plane_angle))
+                                    print("I'm HERE!!!!")
+                                    self.observable_dict_event[f'dijet_v2_atlas_R{jetR}{jet_collection_label}'].append([jet_pt,CosineDPhi])
 
     #---------------------------------------------------------------
     # Return leading jet (or subjet)
