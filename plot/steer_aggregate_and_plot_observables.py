@@ -13,7 +13,7 @@
             python -m venv venv            # only needed the first time
             source venv/bin/activate
             pip install .                  # only needed the first time
-        If merging/plotting histograms ("merge_histograms", "aggregate_histograms", or "plot_histograms" True), 
+        If merging/plotting histograms ("merge_histograms", "aggregate_histograms", or "plot_histograms" True),
         need ROOT compiled with python, e.g.:
             [enter virtual environment with needed python packages, and same python version as ROOT build]
             export ROOTSYS=/home/software/users/james/heppy/external/root/root-current
@@ -25,23 +25,23 @@
 
   The workflow is as follows, with each step toggle-able below:
 
-   (1) Download run info for the set of runs on OSN. 
-       
+   (1) Download run info for the set of runs on OSN.
+
        This involves two pieces:
          (i) Download runs.yaml for each facility, from STAT-XSEDE-2021/docs/DataManagement
          (ii) Using these runs.yaml, download run_info.yaml for all runs and populate a dictionary with all relevant info for each run
 
        By default this will only download files that you have not downloaded locally. You can force re-download all with force_download=True.
-    
+
    (2) Download histograms for each run.
 
        By default this will only download files that you have not downloaded locally. You can force re-download all with force_download=True.
-     
+
    (3) Merge histograms for each run together.
 
    (4) Aggregate runs, using the dictionary from step (1).
-       
-       For each (sqrts, system, parametrization_type, design_point_index), 
+
+       For each (sqrts, system, parametrization_type, design_point_index),
        merge all histograms into a single one, summed over facilities, run numbers, centralities.
 
    (5) Plot final observables for each design point, and write table for input to Bayesian analysis.
@@ -54,16 +54,18 @@
 
 # General
 import os
-import sys
-import subprocess
-import yaml
-import pickle
-from collections import defaultdict
 import pathlib
+import pickle
+import subprocess
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+import h5py
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import h5py
+import yaml
 
 try:
     import ROOT
@@ -84,10 +86,11 @@ def main():
     # Note: plotting script may have warnings about missing histograms, this is usually due to some missing centrality bins for certain design points
     download_runinfo = False
     download_histograms = False
-    merge_histograms = True
-    aggregate_histograms = True
-    plot_and_save_histograms = True
-    write_tables = True
+    list_paths_for_selected_design_points = False
+    merge_histograms = False
+    aggregate_histograms = False
+    plot_and_save_histograms = False
+    write_tables = False
     plot_global_QA = True
 
     # Edit these parameters
@@ -106,7 +109,7 @@ def main():
     #-----------------------------------------------------------------
     # (1) Download info for all runs from OSN, and create a dictionary with all info needed to download and aggregate histograms
     #-----------------------------------------------------------------
-    if download_runinfo or download_histograms or merge_histograms or aggregate_histograms:
+    if download_runinfo or download_histograms or list_paths_for_selected_design_points or merge_histograms or aggregate_histograms:
 
         runs = {}
         run_dictionary = {}
@@ -117,7 +120,7 @@ def main():
             runs_filename = os.path.join(stat_xsede_2021_dir, f'docs/DataManagement/{analysis_name}/{facility}/runs.yaml')
             if os.path.exists(runs_filename):
                 with open(runs_filename, 'r') as f:
-                    runs[facility] = [name for name in list(yaml.safe_load(f).keys())]     
+                    runs[facility] = [name for name in list(yaml.safe_load(f).keys())]
             else:
                 print(f'Warning: runs.yaml not found for {facility}. Removing it from the facilities list.')
                 facilities.remove(facility)
@@ -247,13 +250,83 @@ def main():
                     os.remove(file_list)
 
     #-----------------------------------------------------------------
+    # List histogram paths for selected design points.
+    # Used to extract unmerged histograms for separate studies.
+    #-----------------------------------------------------------------
+    if list_paths_for_selected_design_points:
+        # These options are only put here since they're quite niche.
+        selected_parametrization = "exponential"
+        selected_design_point_indices = list(range(40))
+        selected_centrality = [0, 10]
+        # Using a relative directory here is useful since we will want to tar these files up
+        # while keeping a directory structure
+        relative_dir = Path(local_base_outputdir)
+
+        # Setup
+        # NOTE: We'll store a list of paths per design index because we have multiple sqrt_s per design point
+        design_point_index_to_path = defaultdict(list)
+
+        for facility in facilities:
+            for run in runs[facility]:
+
+                filepath_base = os.path.join(local_base_outputdir, f'histograms_per_run/{facility}/{run}')
+                if not list(pathlib.Path(filepath_base).rglob('*.root')):
+                    continue
+
+                sqrts = run_dictionary[facility][run]['sqrt_s']
+                system = run_dictionary[facility][run]['system']
+                if run_dictionary[facility][run]['calculation_type'] == 'jet_energy_loss':
+                    # AA case
+                    centrality = run_dictionary[facility][run]['centrality']
+                    parametrization = run_dictionary[facility][run]['parametrization']
+                    parametrization_type = parametrization['type']
+                    design_point_index = parametrization['design_point_index']
+
+                    # Apply selection
+                    if not (
+                        centrality == selected_centrality
+                        and design_point_index in selected_design_point_indices
+                        and parametrization_type == selected_parametrization
+                    ):
+                        continue
+                else:
+                    # pp case
+                    # We define -1 as the convention
+                    design_point_index = -1
+                    continue
+
+                design_point_index_to_path[design_point_index].append(Path(filepath_base))
+
+        # Sort the output
+        # NOTE: We don't sort by sqrt_s because we don't have that info. It's not so important in any case.
+        design_point_index_to_path = dict(sorted(design_point_index_to_path.items()))
+        output_files = []
+        for paths in design_point_index_to_path.values():
+            for path in paths:
+                # We want two outputs:
+                # 1. The merged histogram, if available.
+                # NOTE: We need to search for the histogram before we convert it to the relative path!
+                output_files.extend([p.relative_to(relative_dir) for p in path.glob("histograms_*.root")])
+                # 2. The unmerged histograms directory.
+                output_files.append(path.relative_to(relative_dir) / "histograms")
+
+        # And print it for the user to utilize as desired
+        print("We found the following paths for the selected design points:\n")
+        print()
+        print(design_point_index_to_path)
+        print()
+        print("  List of files:")
+        print("    " + " ".join([str(s) for s in output_files]))
+
+
+    #-----------------------------------------------------------------
     # Aggregate histograms for runs with a common: (sqrts, system, parametrization_type, design_point_index)
     # We sum over: facilities, run numbers, centralities
     #
     # Write dictionary to design_point_info.pkl that stores relevant info for each design point
     #
-    # Note that we store xsec and weight_sum separately for each centrality, 
-    # such that we can merge before running plotting script     
+    # Note that we store xsec and weight_sum separately for each centrality,
+    # such that we can merge before running plotting script
     #-----------------------------------------------------------------
     if aggregate_histograms:
         print('Aggregate histograms for runs with common (sqrts, system, parametrization, design_point_index)')
@@ -315,7 +388,7 @@ def main():
         outfile = os.path.join(outputdir_base, 'design_point_info.pkl')
         with open(outfile, 'wb') as f:
             pickle.dump(design_point_dictionary, f)
-        
+
     #-----------------------------------------------------------------
     # Plot histograms and save to ROOT files
     #-----------------------------------------------------------------
@@ -344,9 +417,9 @@ def main():
         for design_point_tuple in design_point_dictionary.keys():
             sqrts, system, parametrization_type, design_point_index = design_point_tuple
             if system in ['AuAu', 'PbPb']:
-                outputdir = os.path.join(local_base_outputdir, f'plot/{sqrts}_{system}_{parametrization_type}/{design_point_index}')       
-                inputfile = os.path.join(outputdir_base, f'{sqrts}_{system}_{parametrization_type}/histograms_design_point_{design_point_index}.root')  
-                pp_reference_filename = os.path.join(local_base_outputdir, f'plot/{sqrts}_pp/final_results.root') 
+                outputdir = os.path.join(local_base_outputdir, f'plot/{sqrts}_{system}_{parametrization_type}/{design_point_index}')
+                inputfile = os.path.join(outputdir_base, f'{sqrts}_{system}_{parametrization_type}/histograms_design_point_{design_point_index}.root')
+                pp_reference_filename = os.path.join(local_base_outputdir, f'plot/{sqrts}_pp/final_results.root')
                 if os.path.exists(pp_reference_filename):
                     cmd = f'python3 {jetscape_analysis_dir}/plot/plot_results_STAT.py'
                     cmd += f' -c {jetscape_analysis_dir}/config/STAT_{sqrts}.yaml'
@@ -436,14 +509,14 @@ def main():
                                     if s in key:
                                         output_dict['observable_label'][key] = s
 
-                                # Put design point info into dataframe, with design point index as index of dataframe 
+                                # Put design point info into dataframe, with design point index as index of dataframe
                                 if key not in output_dict[type]:
                                     output_dict[type][key] = pd.DataFrame()
-                                
+
                                 output_dict[type][key][f'design_point{design_point_index}'] = hf[key][:]
 
                                 design_point_key = (int(sqrts), system, parameterization, int(design_point_index))
-                                parameterization_values = pd.DataFrame(data=[design_point_dictionary[design_point_key]['parametrization']['parametrization_values']], 
+                                parameterization_values = pd.DataFrame(data=[design_point_dictionary[design_point_key]['parametrization']['parametrization_values']],
                                                                        index=[int(design_point_index)])
                                 if parameterization not in design_df.keys():
                                     design_df[parameterization] = parameterization_values
@@ -527,7 +600,7 @@ def main():
 
                         # Sort columns
                         df_prediction = output_dict[type][key]
-                        df_prediction = df_prediction.reindex(sorted(df_prediction.columns, key=lambda x: float(x[12:])), axis=1) 
+                        df_prediction = df_prediction.reindex(sorted(df_prediction.columns, key=lambda x: float(x[12:])), axis=1)
                         columns = list(df_prediction.columns)
 
                         # Get experimental data
@@ -610,7 +683,7 @@ def main():
             indices = ' '.join([str(i) for i in df.index])
             header += f'Design point indices (row index): {indices}'
             np.savetxt(filename, df.values, header=header)
-      
+
         print('Done!')
 
     #-----------------------------------------------------------------
@@ -625,7 +698,7 @@ def main():
             os.makedirs(global_qa_dir)
 
         #----------------------
-        # Plot n_events 
+        # Plot n_events
         # Make a 2d plot from a 2d numpy array: n_generated/n_target for (sqrts_paramterization_centrality, design_point_index)
         n_design_points = 230
         n_design_point_max = {'exponential': 230, 'binomial': 180}
@@ -683,7 +756,7 @@ def main():
         ordered_indices = [3, 2, 11, 10, 9, 8, 5, 4, 7, 6, 1, 0]
         n_events[:] = n_events[ordered_indices,:]
         system_labels = [system_labels[i] for i in ordered_indices]
-            
+
         # Plot
         fig, ax = plt.subplots()
         fig.suptitle(r'Number of events: $N_{gen} / N_{target}$', fontsize=16)
@@ -731,7 +804,7 @@ def main():
                 #file_prediction_keys = file_prediction.split('__')
                 if 'Prediction' in file_prediction and 'values' in file_prediction and parameterization in file_prediction:
                     observable = file_prediction[12:-12].replace(f'{parameterization}__', '')
-                    file_prediction_errors = file_prediction.replace('values', 'errors') 
+                    file_prediction_errors = file_prediction.replace('values', 'errors')
 
                     # Get predictions and compute relative uncertainty -- zero pad to fixed size
                     prediction_values = np.loadtxt(os.path.join(prediction_dir, file_prediction), ndmin=2)
@@ -762,7 +835,7 @@ def main():
                     if prediction_values.shape[0] != data_values.shape[0]:
                         sys.exit(f'({observable_shape}) has different shape than Data ({relative_uncertainty_data_unpadded.shape})')
 
-                    relative_uncertainty_ratio_to_data_unpadded = np.divide(relative_uncertainty_prediction_unpadded, 
+                    relative_uncertainty_ratio_to_data_unpadded = np.divide(relative_uncertainty_prediction_unpadded,
                                                                             relative_uncertainty_data_unpadded[:,None])
                     relative_uncertainty_ratio_to_data_padded = np.pad(relative_uncertainty_ratio_to_data_unpadded, ((0,n_pads_x), (0,n_pads_y)))
                     relative_uncertainty_ratio_to_data[:,:,i_observable] = relative_uncertainty_ratio_to_data_padded
