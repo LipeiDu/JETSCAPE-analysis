@@ -2,6 +2,15 @@ __pycache__/
 .mypy_cache/
 build/
 jetscape_analysis.egg-info/
+jetscape_analysis/_version.py
+
+.env
+.venv
+.venv/
+.venv-*/
+env/
+venv/
+ENV/
 
 .vscode/
 
