@@ -1,0 +1,25 @@
+# Common parameters
+debug_level: 0
+
+# Generation
+xml_user_file: '/home/jetscape-user/JETSCAPE/config/jetscape_user_AA_2011.01430.xml'
+xml_master_file: '/home/jetscape-user/JETSCAPE/config/jetscape_main.xml'
+
+# Analysis parameters -- required
+n_event_max: 1000
+reader: ascii
+progress_bar: True
+merge_histograms: True
+
+# Analysis parameters -- user-defined
+eta_min: -0.5
+eta_max: 0.5
+
+n_pt_bins: 30
+pt_min: 0.
+pt_max: 6.
+n_y_bins: 80
+y_min: -4
+y_max: 4
+
+selected_pid: [9999]
