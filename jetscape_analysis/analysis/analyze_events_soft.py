@@ -57,8 +57,12 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         self.progress_bar = config['progress_bar']
         self.merge_histograms = config['merge_histograms']
         self.selected_pid = config['selected_pid']
+        self.write_Qn_histograms = config['write_Qn_histograms']
         
         self.event_id = 0
+
+        self.eta_min = config['eta_min']
+        self.eta_max = config['eta_max']
 
         self.n_pt_bins = config['n_pt_bins']
         self.pt_min = config['pt_min']
@@ -66,6 +70,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         self.n_y_bins = config['n_y_bins']
         self.y_min = config['y_min']
         self.y_max = config['y_max']
+        self.n_order = config['n_order']
 
     # ---------------------------------------------------------------
     # Main processing function
@@ -91,7 +96,10 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         print("total_events", total_events)
 
         # Open the ROOT file
-        output_file = ROOT.TFile(self.output_dir + "results.root", "RECREATE")
+        output_file = ROOT.TFile(self.output_dir + "Qn_vector_results.root", "RECREATE")
+
+        # Create a histogram to store the event plane angles
+        hist_event_plane_angles = ROOT.TH1F("hist_event_plane_angles", "Event Plane Angles; Event ID; Psi_2", total_events, 0, total_events)
 
         # Iterate through events
         for event_id, event in all_events.items():
@@ -101,11 +109,100 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
             self.initialize_output_objects(event_id)
             # Fill histogram
             self.fill_histogram_from_qnvector(event)
-            # Write analysis task output to ROOT file
-            self.write_histogram_to_file(event_id, output_file)
 
-        # Close the ROOT file
-        output_file.Close()
+            # Process histogram data directly and get event plane angle
+            psi_2 = self.process_histogram(event_id)
+
+            # Fill the event plane angle histogram
+            hist_event_plane_angles.Fill(event_id, psi_2)
+
+            if self.write_Qn_histograms:
+                # Write analysis task output to ROOT file
+                self.write_histogram_to_file(event_id, output_file)
+
+        # Write the event plane angle histogram to the ROOT file
+        hist_event_plane_angles.Write()
+
+        # Close the ROOT file if it was opened
+        if self.write_Qn_histograms:
+            output_file.Close()
+
+    # ---------------------------------------------------------------
+    # Initialize output objects
+    # ---------------------------------------------------------------  
+    def initialize_output_objects(self, event_id):
+        # Initialize histograms for each event
+        self.hist_dN  = ROOT.TH2F(f"hist_dN_event_{event_id}", f"dN; pT; y; Event {event_id}", self.n_pt_bins, self.pt_min, self.pt_max, self.n_y_bins, self.y_min, self.y_max)
+        self.hist_vncos = ROOT.TH2F(f"hist_vncos_event_{event_id}", f"vncos; pT; y; Event {event_id}", self.n_pt_bins, self.pt_min, self.pt_max, self.n_y_bins, self.y_min, self.y_max)
+        self.hist_vnsin = ROOT.TH2F(f"hist_vnsin_event_{event_id}", f"vnsin; pT; y; Event {event_id}", self.n_pt_bins, self.pt_min, self.pt_max, self.n_y_bins, self.y_min, self.y_max)
+    
+    # ---------------------------------------------------------------
+    # Function to fill 2D histogram with Qn vector results
+    # ---------------------------------------------------------------
+    def fill_histogram_from_qnvector(self, qnvector_results):
+
+        for result in qnvector_results:
+
+            pid = result[0]
+            pt = result[1]
+            pt_err = result[2]
+            y = result[3]
+            y_err = result[4]
+            et = result[5]
+
+            # n = 1 is skipped
+            vncos = result[12]
+            vncos_err = result[13]
+            vnsin = result[14]
+            vnsin_err = result[15]
+
+            dN = result[8+4*(self.n_order-1)]
+
+            # Fill the histograms with errors
+            self.hist_dN.Fill(pt, y, dN)
+
+            self.hist_vncos.Fill(pt, y, vncos)
+            self.hist_vncos.SetBinError(self.hist_vncos.FindBin(pt, y), vncos_err)
+
+            self.hist_vnsin.Fill(pt, y, vnsin)
+            self.hist_vnsin.SetBinError(self.hist_vnsin.FindBin(pt, y), vnsin_err)
+
+    # ---------------------------------------------------------------
+    # Calculate necessary quantities using the histogram of Qn vector results
+    # ---------------------------------------------------------------
+    def process_histogram(self, event_id):
+        numerator = 0.0
+        denominator = 0.0
+
+        for bin_x in range(1, self.hist_dN.GetNbinsX() + 1):
+            for bin_y in range(1, self.hist_dN.GetNbinsY() + 1):
+                pt = self.hist_dN.GetXaxis().GetBinCenter(bin_x)
+                y = self.hist_dN.GetYaxis().GetBinCenter(bin_y)
+
+                if self.eta_min <= y <= self.eta_max:
+                    dN = self.hist_dN.GetBinContent(bin_x, bin_y)
+                    vncos = self.hist_vncos.GetBinContent(bin_x, bin_y)
+                    vnsin = self.hist_vnsin.GetBinContent(bin_x, bin_y)
+
+                    numerator += vnsin * dN
+                    denominator += vncos * dN
+
+        if denominator != 0:
+            psi_2 = 0.5 * ROOT.TMath.ATan2(numerator, denominator)
+        else:
+            psi_2 = None
+
+        print(f"Event: {event_id}, Event Plane Angle (psi_2): {psi_2}")
+        return psi_2
+
+    # ---------------------------------------------------------------
+    # Save all ROOT histograms and trees to file
+    # ---------------------------------------------------------------
+    def write_histogram_to_file(self, event_id, output_file):
+        output_file.cd()
+        self.hist_dN.Write()
+        self.hist_vncos.Write()
+        self.hist_vnsin.Write()
 
     # ---------------------------------------------------------------
     # Reader of the Qn vector file
@@ -150,46 +247,6 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
         total_events = len(all_events)
         return all_events, total_events
-
-    # ---------------------------------------------------------------
-    # Initialize output objects
-    # ---------------------------------------------------------------
-    def initialize_output_objects(self, event_id):
-        # Initialize the histogram for each event
-        self.hist = ROOT.TH2F(f"hist_dNdpTdy_event_{event_id}", f"dNdpTdy; pT; y; Event {event_id}", self.n_pt_bins, self.pt_min, self.pt_max, self.n_y_bins, self.y_min, self.y_max)    
-    
-    # ---------------------------------------------------------------
-    # Function to fill 2D histogram with Qn vector results
-    # ---------------------------------------------------------------
-    def fill_histogram_from_qnvector(self, qnvector_results):
-
-        for result in qnvector_results:
-
-            pid = result[0]
-            pt = result[1]
-            pt_err = result[2]
-            y = result[3]
-            y_err = result[4]
-            et = result[5]
-            dNdpTdy = result[6]
-            dNdpTdy_err = result[7]
-            vncos = result[8]
-            vncos_err = result[9]
-            vnsin = result[10]
-            vnsin_err = result[11]
-            dN = result[12]
-
-            # Fill the histogram
-            self.hist.Fill(pt, y, dNdpTdy)
-
-    # ---------------------------------------------------------------
-    # Save all ROOT histograms and trees to file
-    # ---------------------------------------------------------------
-    def write_histogram_to_file(self, event_id, output_file):
-        # Write the histogram to the file
-        output_file.cd()
-        self.hist.Write()
-
 
 ##################################################################
 if __name__ == "__main__":
