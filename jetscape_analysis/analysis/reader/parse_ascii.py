@@ -749,6 +749,7 @@ def parse_to_parquet(
     max_chunks: int = -1,
     compression: str = "zstd",
     compression_level: int | None = None,
+    custom_event_plane_angles: dict = None,
 ) -> None:
     """Parse the JETSCAPE ASCII and convert it to parquet, (potentially) storing only the minimum necessary columns.
 
@@ -762,6 +763,7 @@ def parse_to_parquet(
         compression: Compression algorithm for parquet. Default: "zstd". Options include: ["snappy", "gzip", "ztsd"].
             "gzip" is slightly better for storage, but slower. See the compression tests and parquet docs for more.
         compression_level: Compression level for parquet. Default: `None`, which lets parquet choose the best value.
+        custom_event_plane_angles: Optional dictionary of custom event plane angles to replace the ones in the input file.
     Returns:
         None. The parsed events are stored in parquet files.
     """
@@ -771,7 +773,24 @@ def parse_to_parquet(
     base_output_filename.parent.mkdir(parents=True, exist_ok=True)
 
     for i, arrays in enumerate(read(filename=input_filename, events_per_chunk=events_per_chunk, parser=parser)):
-        # Reduce to the minimum required data.
+
+        # Replace event plane angles if custom values are provided
+        if custom_event_plane_angles:
+            # Convert awkward array to a list of dictionaries
+            event_list = ak.to_list(arrays)
+            
+            # Create a new list with updated event plane angles
+            updated_event_list = []
+            for event in event_list:
+                event_id = event.get("event_ID")
+                if event_id in custom_event_plane_angles:
+                    event["event_plane_angle"] = custom_event_plane_angles[event_id]
+                updated_event_list.append(event)
+            
+            # Convert the updated list back to an awkward array
+            arrays = ak.from_iter(updated_event_list)
+
+        # Reduce to the minimum required data
         if store_only_necessary_columns:
             arrays = full_events_to_only_necessary_columns_E_px_py_pz(arrays)  # noqa: PLW2901
         else:

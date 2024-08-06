@@ -9,6 +9,8 @@ from __future__ import print_function
 import os
 import sys
 import argparse
+import uproot
+
 sys.path.append('.')
 
 from jetscape_analysis.analysis.reader import parse_ascii
@@ -20,13 +22,56 @@ class SkimAscii(common_base.CommonBase):
     # ---------------------------------------------------------------
     # Constructor
     # ---------------------------------------------------------------
-    def __init__(self, input_file="", output_dir="", events_per_chunk=50000, **kwargs):
+    def __init__(self, input_file="", output_dir="", events_per_chunk=50000, event_plane_angle_file=None, **kwargs):
         super(SkimAscii, self).__init__(**kwargs)
         self.input_file = input_file
         self.output_dir = output_dir
 
         self.event_id = 0
         self.events_per_chunk = events_per_chunk
+
+        self.event_plane_angle_file = event_plane_angle_file
+        self.custom_event_plane_angles = self.load_custom_event_plane_angles() if event_plane_angle_file else None
+
+    # ---------------------------------------------------------------
+    # Load custom event plane angles from a ROOT file
+    # ---------------------------------------------------------------
+    # def load_custom_event_plane_angles(self):
+    #     event_plane_angles = {}
+    #     root_file = ROOT.TFile(self.event_plane_angle_file, "READ")
+    #     hist = root_file.Get("hist_event_plane_angles")
+        
+    #     if hist:
+    #         for bin_num in range(1, hist.GetNbinsX() + 1):
+    #             event_id = bin_num - 1  # Assuming event ID starts from 0
+    #             psi_2 = hist.GetBinContent(bin_num)
+    #             event_plane_angles[event_id] = psi_2
+    #     root_file.Close()
+    #     return event_plane_angles
+
+    def load_custom_event_plane_angles(self):
+        event_plane_angles = {}
+        
+        # Open the ROOT file using uproot
+        with uproot.open(self.event_plane_angle_file) as root_file:
+            # Access the histogram
+            hist = root_file["hist_event_plane_angles"]
+            
+            # Convert histogram to numpy arrays
+            bin_contents, bin_edges = hist.to_numpy()
+            print("bin_edges =", bin_edges)
+            print("bin_contents =", bin_contents)
+            
+            # Calculate the bin centers
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+            
+            # Iterate through the bins and store the event plane angles
+            for i, psi_2 in enumerate(bin_contents):
+                event_id = int(bin_centers[i])  # Use bin centers for event ID
+                print("event_id, psi_2 =", event_id, psi_2)
+                event_plane_angles[event_id] = psi_2
+                
+        return event_plane_angles
 
     # ---------------------------------------------------------------
     # Main processing function for a single pt-hat bin
@@ -38,7 +83,8 @@ class SkimAscii(common_base.CommonBase):
         parse_ascii.parse_to_parquet(base_output_filename=self.output_dir,
                                      store_only_necessary_columns=True,
                                      input_filename=self.input_file,
-                                     events_per_chunk=self.events_per_chunk)
+                                     events_per_chunk=self.events_per_chunk,
+                                     custom_event_plane_angles=self.custom_event_plane_angles)
 
 ##################################################################
 if __name__ == "__main__":
@@ -71,7 +117,16 @@ if __name__ == "__main__":
         default=50000,
         help="Number of events to store in each parquet file",
     )
- 
+    parser.add_argument(
+        "-e",
+        "--eventPlaneAngleFile",
+        action="store",
+        type=str,
+        metavar="eventPlaneAngleFile",
+        default=None,
+        help="File containing custom event plane angles",
+    )
+
     # Parse the arguments
     args = parser.parse_args()
 
@@ -80,5 +135,6 @@ if __name__ == "__main__":
         print('File "{0}" does not exist! Exiting!'.format(args.inputFile))
         sys.exit(0)
 
-    analysis = SkimAscii(input_file=args.inputFile, output_dir=args.outputDir, events_per_chunk=args.nEventsPerFile)
+    analysis = SkimAscii(input_file=args.inputFile, output_dir=args.outputDir, events_per_chunk=args.nEventsPerFile,
+        event_plane_angle_file=args.eventPlaneAngleFile)
     analysis.skim()

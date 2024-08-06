@@ -99,7 +99,10 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         output_file = ROOT.TFile(self.output_dir + "Qn_vector_results.root", "RECREATE")
 
         # Create a histogram to store the event plane angles
-        hist_event_plane_angles = ROOT.TH1F("hist_event_plane_angles", "Event Plane Angles; Event ID; Psi_2", total_events, 0, total_events)
+        hist_event_plane_angles = ROOT.TH1F("hist_event_plane_angles", 
+                                            "Event Plane Angles; Event ID; Psi_2", 
+                                            total_events + 1,  # Bin count to include all events
+                                            0, total_events + 1)  # Edge to include the last event ID
 
         # Iterate through events
         for event_id, event in all_events.items():
@@ -114,7 +117,8 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
             psi_2 = self.process_histogram(event_id)
 
             # Fill the event plane angle histogram
-            hist_event_plane_angles.Fill(event_id, psi_2)
+            # Use event_id as the bin index
+            hist_event_plane_angles.Fill(event_id + 0.5, psi_2)  # Adding 0.5 to align with bin center
 
             if self.write_Qn_histograms:
                 # Write analysis task output to ROOT file
@@ -122,6 +126,16 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
         # Write the event plane angle histogram to the ROOT file
         hist_event_plane_angles.Write()
+
+        # Print the histogram contents
+        # Access histogram from the ROOT file to print its contents
+        hist_event_plane_angles = output_file.Get("hist_event_plane_angles")
+        
+        print("Histogram contents:")
+        for bin_num in range(1, hist_event_plane_angles.GetNbinsX() + 1):
+            bin_center = hist_event_plane_angles.GetBinCenter(bin_num)
+            bin_content = hist_event_plane_angles.GetBinContent(bin_num)
+            print(f"Event ID: {int(bin_center)}, Psi_2: {bin_content}")
 
         # Close the ROOT file if it was opened
         if self.write_Qn_histograms:
