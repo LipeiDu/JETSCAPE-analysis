@@ -779,12 +779,14 @@ def parse_to_parquet(
             # Convert awkward array to a list of dictionaries
             event_list = ak.to_list(arrays)
             
-            # Create a new list with updated event plane angles
+            # Create a new list with updated event plane angles and v2
             updated_event_list = []
             for event in event_list:
                 event_id = event.get("event_ID")
                 if event_id in custom_event_plane_angles:
-                    event["event_plane_angle"] = custom_event_plane_angles[event_id]
+                    psi_2, v2 = custom_event_plane_angles[event_id]
+                    event["event_plane_angle"] = psi_2
+                    event["v2"] = v2  # Add or update v2
                 updated_event_list.append(event)
             
             # Convert the updated list back to an awkward array

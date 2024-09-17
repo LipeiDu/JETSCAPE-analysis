@@ -36,42 +36,46 @@ class SkimAscii(common_base.CommonBase):
     # ---------------------------------------------------------------
     # Load custom event plane angles from a ROOT file
     # ---------------------------------------------------------------
+    # Load custom event plane angles and v2 magnitudes from a ROOT file
     # def load_custom_event_plane_angles(self):
-    #     event_plane_angles = {}
+    #     event_plane_data = {}
     #     root_file = ROOT.TFile(self.event_plane_angle_file, "READ")
-    #     hist = root_file.Get("hist_event_plane_angles")
+    #     hist_psi_2 = root_file.Get("hist_event_plane_angles")
+    #     hist_v2 = root_file.Get("hist_v2_magnitudes")
         
-    #     if hist:
-    #         for bin_num in range(1, hist.GetNbinsX() + 1):
+    #     if hist_psi_2 and hist_v2:
+    #         for bin_num in range(1, hist_psi_2.GetNbinsX() + 1):
     #             event_id = bin_num - 1  # Assuming event ID starts from 0
-    #             psi_2 = hist.GetBinContent(bin_num)
-    #             event_plane_angles[event_id] = psi_2
+    #             psi_2 = hist_psi_2.GetBinContent(bin_num)
+    #             v2 = hist_v2.GetBinContent(bin_num)
+    #             event_plane_data[event_id] = (psi_2, v2)  # Store both Psi_2 and v2 for each event
     #     root_file.Close()
-    #     return event_plane_angles
+    #     return event_plane_data
 
     def load_custom_event_plane_angles(self):
-        event_plane_angles = {}
+        event_plane_data = {}
         
         # Open the ROOT file using uproot
         with uproot.open(self.event_plane_angle_file) as root_file:
-            # Access the histogram
-            hist = root_file["hist_event_plane_angles"]
+            # Access the Psi_2 and v2 histograms
+            hist_psi_2 = root_file["hist_event_plane_angles"]
+            hist_v2 = root_file["hist_v2_magnitudes"]
             
-            # Convert histogram to numpy arrays
-            bin_contents, bin_edges = hist.to_numpy()
-            print("bin_edges =", bin_edges)
-            print("bin_contents =", bin_contents)
+            # Convert histograms to numpy arrays
+            psi_2_contents, bin_edges = hist_psi_2.to_numpy()
+            v2_contents, _ = hist_v2.to_numpy()
             
             # Calculate the bin centers
             bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
             
-            # Iterate through the bins and store the event plane angles
-            for i, psi_2 in enumerate(bin_contents):
+            # Iterate through the bins and store both psi_2 and v2
+            for i, psi_2 in enumerate(psi_2_contents):
                 event_id = int(bin_centers[i])  # Use bin centers for event ID
-                print("event_id, psi_2 =", event_id, psi_2)
-                event_plane_angles[event_id] = psi_2
+                v2 = v2_contents[i]  # Corresponding v2 magnitude
+                event_plane_data[event_id] = (psi_2, v2)
+                print(f"Event ID: {event_id}, Psi_2: {psi_2}, v2: {v2}")
                 
-        return event_plane_angles
+        return event_plane_data
 
     # ---------------------------------------------------------------
     # Main processing function for a single pt-hat bin
@@ -119,10 +123,10 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-e",
-        "--eventPlaneAngleFile",
+        "--eventPlaneAngleDir",
         action="store",
         type=str,
-        metavar="eventPlaneAngleFile",
+        metavar="eventPlaneAngleDir",
         default=None,
         help="File containing custom event plane angles",
     )
@@ -135,6 +139,8 @@ if __name__ == "__main__":
         print('File "{0}" does not exist! Exiting!'.format(args.inputFile))
         sys.exit(0)
 
+    eventPlaneAngleFile = f"{args.eventPlaneAngleDir}"+"/Qn_vector_results.root"
+
     analysis = SkimAscii(input_file=args.inputFile, output_dir=args.outputDir, events_per_chunk=args.nEventsPerFile,
-        event_plane_angle_file=args.eventPlaneAngleFile)
+        event_plane_angle_file=eventPlaneAngleFile)
     analysis.skim()

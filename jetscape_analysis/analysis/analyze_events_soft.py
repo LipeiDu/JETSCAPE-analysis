@@ -98,11 +98,16 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         # Open the ROOT file
         output_file = ROOT.TFile(self.output_dir + "Qn_vector_results.root", "RECREATE")
 
-        # Create a histogram to store the event plane angles
+        # Create histograms to store the event plane angles and v2
         hist_event_plane_angles = ROOT.TH1F("hist_event_plane_angles", 
                                             "Event Plane Angles; Event ID; Psi_2", 
                                             total_events + 1,  # Bin count to include all events
                                             0, total_events + 1)  # Edge to include the last event ID
+
+        hist_v2_magnitudes = ROOT.TH1F("hist_v2_magnitudes", 
+                                       "v2 Magnitude; Event ID; v2", 
+                                       total_events + 1, 
+                                       0, total_events + 1)
 
         # Iterate through events
         for event_id, event in all_events.items():
@@ -113,12 +118,13 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
             # Fill histogram
             self.fill_histogram_from_qnvector(event)
 
-            # Process histogram data directly and get event plane angle
-            psi_2 = self.process_histogram(event_id)
+            # Process histogram data and get both psi_2 and v2
+            psi_2, v2 = self.process_histogram(event_id)
 
             # Fill the event plane angle histogram
             # Use event_id as the bin index
             hist_event_plane_angles.Fill(event_id + 0.5, psi_2)  # Adding 0.5 to align with bin center
+            hist_v2_magnitudes.Fill(event_id + 0.5, v2)
 
             if self.write_Qn_histograms:
                 # Write analysis task output to ROOT file
@@ -126,16 +132,20 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
         # Write the event plane angle histogram to the ROOT file
         hist_event_plane_angles.Write()
+        hist_v2_magnitudes.Write()
 
         # Print the histogram contents
-        # Access histogram from the ROOT file to print its contents
-        hist_event_plane_angles = output_file.Get("hist_event_plane_angles")
-        
-        print("Histogram contents:")
+        print("Histogram contents (Psi_2):")
         for bin_num in range(1, hist_event_plane_angles.GetNbinsX() + 1):
             bin_center = hist_event_plane_angles.GetBinCenter(bin_num)
             bin_content = hist_event_plane_angles.GetBinContent(bin_num)
             print(f"Event ID: {int(bin_center)}, Psi_2: {bin_content}")
+
+        print("Histogram contents (v2):")
+        for bin_num in range(1, hist_v2_magnitudes.GetNbinsX() + 1):
+            bin_center = hist_v2_magnitudes.GetBinCenter(bin_num)
+            bin_content = hist_v2_magnitudes.GetBinContent(bin_num)
+            print(f"Event ID: {int(bin_center)}, v2: {bin_content}")
 
         # Close the ROOT file if it was opened
         if self.write_Qn_histograms:
@@ -185,8 +195,11 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # Calculate necessary quantities using the histogram of Qn vector results
     # ---------------------------------------------------------------
     def process_histogram(self, event_id):
-        numerator = 0.0
-        denominator = 0.0
+
+        numerator_psi2 = 0.0
+        denominator_psi2 = 0.0
+        numerator_v2 = 0.0
+        denominator_v2 = 0.0
 
         for bin_x in range(1, self.hist_dN.GetNbinsX() + 1):
             for bin_y in range(1, self.hist_dN.GetNbinsY() + 1):
@@ -198,16 +211,26 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                     vncos = self.hist_vncos.GetBinContent(bin_x, bin_y)
                     vnsin = self.hist_vnsin.GetBinContent(bin_x, bin_y)
 
-                    numerator += vnsin * dN
-                    denominator += vncos * dN
+                    # For event plane angle psi_2
+                    numerator_psi2 += vnsin * dN
+                    denominator_psi2 += vncos * dN
 
-        if denominator != 0:
-            psi_2 = 0.5 * ROOT.TMath.ATan2(numerator, denominator)
+                    # For v2 magnitude
+                    numerator_v2 += (vncos**2 + vnsin**2) * dN
+                    denominator_v2 += dN
+
+        if denominator_psi2 != 0:
+            psi_2 = 0.5 * ROOT.TMath.ATan2(numerator_psi2, denominator_psi2)
         else:
             psi_2 = None
 
-        print(f"Event: {event_id}, Event Plane Angle (psi_2): {psi_2}")
-        return psi_2
+        if denominator_v2 != 0:
+            v2 = ROOT.TMath.Sqrt(numerator_v2) / denominator_v2
+        else:
+            v2 = None
+
+        print(f"Event: {event_id}, Event Plane Angle (psi_2): {psi_2}, v2 magnitude: {v2}")
+        return psi_2, v2
 
     # ---------------------------------------------------------------
     # Save all ROOT histograms and trees to file
