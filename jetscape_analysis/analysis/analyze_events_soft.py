@@ -24,21 +24,12 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # ---------------------------------------------------------------
     # Constructor
     # ---------------------------------------------------------------
-    def __init__(self, config_file="", input_dir="", output_dir="", **kwargs):
+    def __init__(self, config_file="", input_file="", output_file="", **kwargs):
 
         super(AnalyzeJetscapeEvents_Base, self).__init__(**kwargs)
         self.config_file = config_file
-        self.input_dir = input_dir
-        self.output_dir = output_dir
-
-        if not self.input_dir.endswith("/"):
-            self.input_dir = self.input_dir + "/"
-
-        # Create output dir
-        if not self.output_dir.endswith("/"):
-            self.output_dir = self.output_dir + "/"
-        if not os.path.exists(self.output_dir):
-            os.makedirs(self.output_dir)
+        self.input_file = input_file
+        self.output_file = output_file
 
         self.initialize_config()
 
@@ -76,15 +67,9 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # Main processing function
     # ---------------------------------------------------------------
     def analyze_jetscape_events(self):
-  
-        # Create outputDir
-        if not self.output_dir.endswith("/"):
-            self.output_dir = self.output_dir + "/"
-        if not os.path.exists(self.output_dir):
-            os.makedirs(self.output_dir)
 
         # Read JETSCAPE Qn vector output and write histograms to ROOT file
-        self.input_file_Qnvector = os.path.join(self.input_dir, 'event_QnVector.dat')
+        self.input_file_Qnvector = self.input_file
         self.run_jetscape_analysis()
 
     # ---------------------------------------------------------------
@@ -96,7 +81,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         print("total_events", total_events)
 
         # Open the ROOT file
-        output_file = ROOT.TFile(self.output_dir + "Qn_vector_results.root", "RECREATE")
+        output_file = ROOT.TFile(self.output_file, "RECREATE")
 
         # Create histograms to store the event plane angles and v2
         hist_event_plane_angles = ROOT.TH1F("hist_event_plane_angles", 
@@ -300,19 +285,19 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-i",
-        "--inputDir",
+        "--inputFilename",
         action="store",
         type=str,
-        metavar="inputDir",
+        metavar="inputFilename",
         default="/home/jetscape-user/JETSCAPE-analysis/TestOutput",
         help="Input directory containing JETSCAPE output files",
     )
     parser.add_argument(
         "-o",
-        "--outputDir",
+        "--outputFilename",
         action="store",
         type=str,
-        metavar="outputDir",
+        metavar="outputFilename",
         default="/home/jetscape-user/JETSCAPE-analysis/TestOutput",
         help="Output directory for output to be written to",
     )
@@ -320,17 +305,10 @@ if __name__ == "__main__":
     # Parse the arguments
     args = parser.parse_args()
 
-    # If invalid configFile is given, exit
-    if not os.path.exists(args.configFile):
-        print('File "{0}" does not exist! Exiting!'.format(args.configFile))
-        sys.exit(0)
-
-    # If invalid inputDir is given, exit
-    if not os.path.exists(args.inputDir):
-        print('File "{0}" does not exist! Exiting!'.format(args.inputDir))
-        sys.exit(0)
-
-    analysis = AnalyzeJetscapeEvents_Base(config_file=args.configFile, input_dir=args.inputDir, output_dir=args.outputDir)
+    # Run the analysis
+    analysis = AnalyzeJetscapeEvents_Base(config_file=args.configFile, input_file=args.inputFilename, output_file=args.outputFilename)
     analysis.analyze_jetscape_events()
+
+
 
 

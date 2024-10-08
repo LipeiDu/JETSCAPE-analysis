@@ -742,53 +742,64 @@ class PlotResults(common_base.CommonBase):
     #-------------------------------------------------------------------------------------------
     def post_process_histogram(self, observable_type, observable, block, centrality, centrality_index: int, collection_label=''):
 
+        # List of methods for v2 calculation (Event Plane and Scalar Product)
+        methods = ['EP', 'SP']
+
         # jet v2
         if observable_type in ['dijet'] and 'v2' in observable and self.is_AA:
-            
-            h = self.observable_settings[f'jetscape_distribution{collection_label}']
-            if h:
-                h_num_name = f'h_{observable_type}_{observable}{self.suffix}{collection_label}_{centrality}'
-                h_denom_name = f'h_{observable_type}_{observable}{self.suffix}{collection_label}_denom_{centrality}'
 
-                self.observable_settings[f'jetscape_distribution{collection_label}'] = self.input_file.Get(h_num_name).Clone()
+            for method in methods:
 
-                for i in range(0,self.input_file.Get(h_num_name).GetNbinsX()):
-                    h_num_i = self.input_file.Get(h_num_name).GetBinContent(i)
-                    h_denom_i = self.input_file.Get(h_denom_name).GetBinContent(i)
-                    if h_denom_i == 0.0:
-                        h_denom_i = -99.0
-                        h_num_i = 0.0
-                    self.observable_settings[f'jetscape_distribution{collection_label}'].SetBinContent(i, h_num_i/h_denom_i)
+                h = self.observable_settings[f'jetscape_distribution{collection_label}']
+                if h:
+                    h_num_name = f'h_{observable_type}_{observable}{self.suffix}{collection_label}_num_{method}_{centrality}'
+                    h_denom_name = f'h_{observable_type}_{observable}{self.suffix}{collection_label}_{centrality}'
 
-                self.observable_settings[f'jetscape_distribution{collection_label}'].SetName(f'jetscape_distribution_{observable_type}_{observable}_{centrality}')
+                    self.observable_settings[f'jetscape_distribution{collection_label}'] = self.input_file.Get(h_num_name).Clone()
+
+                    for i in range(0, self.input_file.Get(h_num_name).GetNbinsX()):
+                        h_num_i = self.input_file.Get(h_num_name).GetBinContent(i)
+                        h_denom_i = self.input_file.Get(h_denom_name).GetBinContent(i)
+
+                        if h_denom_i == 0.0:
+                            h_denom_i = -99.0
+                            h_num_i = 0.0
+
+                        self.observable_settings[f'jetscape_distribution{collection_label}'].SetBinContent(i, h_num_i/h_denom_i)
+
+                    self.observable_settings[f'jetscape_distribution{collection_label}'].SetName(f'jetscape_distribution_{observable_type}_{observable}_{method}_{centrality}')
 
         # hadron v2
         if observable_type in ['hadron', 'hadron_correlations'] and 'v2' in observable and self.is_AA:
-            
-            h = self.observable_settings[f'jetscape_distribution{collection_label}']
-            if h:
-                h_num_name = f'h_{observable_type}_{observable}_{centrality}'
-                h_num_name_holes = f'h_{observable_type}_{observable}_holes_{centrality}'
-                h_denom_name = f'h_{observable_type}_{observable}_denom_{centrality}'
-                h_denom_name_holes = f'h_{observable_type}_{observable}_holes_denom_{centrality}'
 
-                self.observable_settings[f'jetscape_distribution'] = self.input_file.Get(h_num_name).Clone()
-                self.observable_settings[f'jetscape_distribution_unsubtracted'] = self.input_file.Get(h_num_name).Clone()
+            for method in methods:
 
-                for i in range(0,self.input_file.Get(h_num_name).GetNbinsX()):
-                    h_num_i = self.input_file.Get(h_num_name).GetBinContent(i)
-                    h_num_holes_i = self.input_file.Get(h_num_name_holes).GetBinContent(i)
-                    h_denom_i = self.input_file.Get(h_denom_name).GetBinContent(i)
-                    h_denom_holes_i = self.input_file.Get(h_denom_name_holes).GetBinContent(i)
-                    if h_denom_i == 0.0:
-                        h_denom_i = -99.0
-                        h_denom_holes_i = 0.0
-                        h_num_i = 0.0
-                    self.observable_settings[f'jetscape_distribution'].SetBinContent(i, (h_num_i - h_num_holes_i)/(h_denom_i - h_denom_holes_i) )
-                    self.observable_settings[f'jetscape_distribution_unsubtracted'].SetBinContent(i,h_num_i/h_denom_i)
+                h = self.observable_settings[f'jetscape_distribution']
+                if h:
+                    h_num_name = f'h_{observable_type}_{observable}_num_{method}_{centrality}'
+                    h_num_name_holes = f'h_{observable_type}_{observable}_holes_num_{method}_{centrality}'
+                    h_denom_name = f'h_{observable_type}_{observable}_{centrality}'
+                    h_denom_name_holes = f'h_{observable_type}_{observable}_holes_{centrality}'
 
-                self.observable_settings[f'jetscape_distribution'].SetName(f'jetscape_distribution_{observable_type}_{observable}_{centrality}')
-                self.observable_settings[f'jetscape_distribution_unsubtracted'].SetName(f'jetscape_distribution_unsubtracted_{observable_type}_{observable}_{centrality}')
+                    self.observable_settings[f'jetscape_distribution'] = self.input_file.Get(h_num_name).Clone()
+                    self.observable_settings[f'jetscape_distribution_unsubtracted'] = self.input_file.Get(h_num_name).Clone()
+
+                    for i in range(0, self.input_file.Get(h_num_name).GetNbinsX()):
+                        h_num_i = self.input_file.Get(h_num_name).GetBinContent(i)
+                        h_num_holes_i = self.input_file.Get(h_num_name_holes).GetBinContent(i)
+                        h_denom_i = self.input_file.Get(h_denom_name).GetBinContent(i)
+                        h_denom_holes_i = self.input_file.Get(h_denom_name_holes).GetBinContent(i)
+
+                        if h_denom_i == 0.0:
+                            h_denom_i = -99.0
+                            h_denom_holes_i = 0.0
+                            h_num_i = 0.0
+
+                        self.observable_settings[f'jetscape_distribution'].SetBinContent(i, (h_num_i - h_num_holes_i)/(h_denom_i - h_denom_holes_i) )
+                        self.observable_settings[f'jetscape_distribution_unsubtracted'].SetBinContent(i,h_num_i/h_denom_i)
+
+                    self.observable_settings[f'jetscape_distribution'].SetName(f'jetscape_distribution_{observable_type}_{observable}_{method}_{centrality}')
+                    self.observable_settings[f'jetscape_distribution_unsubtracted'].SetName(f'jetscape_distribution_unsubtracted_{observable_type}_{observable}_{method}_{centrality}')
 
         # For the ATLAS rapidity-dependence, we need to divide the histograms by their first bin (|y|<0.3) to form a double ratio
         if observable == 'pt_y_atlas':

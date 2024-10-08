@@ -786,7 +786,7 @@ def parse_to_parquet(
                 if event_id in custom_event_plane_angles:
                     psi_2, v2 = custom_event_plane_angles[event_id]
                     event["event_plane_angle"] = psi_2
-                    event["v2"] = v2  # Add or update v2
+                    event["soft_v2"] = v2  # Add or update v2
                 updated_event_list.append(event)
             
             # Convert the updated list back to an awkward array

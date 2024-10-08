@@ -1373,7 +1373,7 @@ class AnalyzeJetscapeEvents_STAT(analyze_events_base_STAT.AnalyzeJetscapeEvents_
                             if abs(jet.eta()) < (self.dijet_observables['v2_atlas']['eta_cut']):
                                 if pt_min < jet_pt < pt_max:
                                     CosineDPhi = np.cos(2.0*(jet.phi() - event_plane_angle))
-                                    print("I'm HERE!!!!")
+
                                     self.observable_dict_event[f'dijet_v2_atlas_R{jetR}{jet_collection_label}'].append([jet_pt,CosineDPhi])
 
     #---------------------------------------------------------------

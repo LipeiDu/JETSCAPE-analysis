@@ -77,7 +77,8 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
             run_info_path = _final_state_hadrons_path.parent / f"{_run_number}_info.yaml"
             with open(run_info_path, 'r') as f:
                 _run_info = yaml.safe_load(f)
-                centrality_string = _run_info["index_to_hydro_event"][_file_index].split('/')[0].split('_')
+                centrality_string = ['cent', '00', '01']#_run_info["index_to_hydro_event"][_file_index].split('/')[0].split('_')
+                # centrality_string = _run_info["index_to_hydro_event"][_file_index].split('/')[0].split('_')
                 # index of 1 and 2 based on an example entry of "cent_00_01"
                 self.centrality = [int(centrality_string[1]), int(centrality_string[2])]
 
@@ -133,6 +134,7 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
         # Loop through events
         start = time.time()
         weight_sum = 0.
+        soft_v2_squared_sum = 0.
         for i,event in df_event_chunk.iterrows():
 
             if i % 1000 == 0:
@@ -150,11 +152,14 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
             # Fill the observables dict to a new entry in the event list
             event_weight = event['event_weight']
             weight_sum += event_weight
+            soft_particle_v2 = event['soft_v2']
+            soft_v2_squared_sum += soft_particle_v2 * soft_particle_v2
             if self.event_has_entries(self.observable_dict_event):
 
                 # Fill event cross-section weight
                 self.observable_dict_event['event_weight'] = event_weight
                 self.observable_dict_event['pt_hat'] = event['pt_hat']
+                self.observable_dict_event['soft_v2'] = soft_particle_v2
                 
                 self.output_event_list.append(self.observable_dict_event)
 
@@ -163,6 +168,7 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
         self.cross_section_dict['cross_section_error'] = event['cross_section_error']
         self.cross_section_dict['n_events'] = self.n_event_max
         self.cross_section_dict['weight_sum'] = weight_sum
+        self.cross_section_dict['soft_v2_average'] = np.sqrt(soft_v2_squared_sum / self.n_event_max)
         if self.is_AA:
             self.cross_section_dict['centrality_min'] = self.centrality[0]
             self.cross_section_dict['centrality_max'] = self.centrality[1]
@@ -259,6 +265,8 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
         else:
             # Picked a value to make an all true mask. We don't select anything
             status_mask = event['status'] > -1e6
+
+        status_mask = status_mask & (event['status'] != 11)
 
         # Construct indices according to charge
         charged_mask = get_charged_mask(event['particle_ID'], select_charged)

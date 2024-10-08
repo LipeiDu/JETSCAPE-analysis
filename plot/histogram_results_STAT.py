@@ -71,6 +71,7 @@ class HistogramResults(common_base.CommonBase):
         #       that the jobs failed.
         self.weights = self.observables_df.get('event_weight', [])
         self.pt_hat = self.observables_df.get('pt_hat', [])
+        self.soft_particle_v2 = self.observables_df.get('soft_v2', [])
 
         #------------------------------------------------------
         # Read cross-section file
@@ -80,6 +81,7 @@ class HistogramResults(common_base.CommonBase):
         self.cross_section_error = cross_section_df['cross_section_error'][0]
         self.n_events_generated = cross_section_df['n_events'][0]
         self.sum_weights = cross_section_df['weight_sum'][0]
+        self.soft_v2_average = cross_section_df['soft_v2_average'][0]
         if self.is_AA:
             self.centrality = [ int(cross_section_df['centrality_min'][0]), int(cross_section_df['centrality_max'][0]) ]
             self.observable_centrality_list = []
@@ -162,6 +164,11 @@ class HistogramResults(common_base.CommonBase):
                     h = ROOT.TH1F(f'h_weights_{centrality}', f'h_weights_{centrality}', bins.size-1, bins)
                     for weight in self.weights:
                         h.Fill(weight)
+                    self.output_list.append(h)
+
+                    # Save soft particle v2 average
+                    h = ROOT.TH1F(f'h_soft_v2_average_{centrality}', f'h_soft_v2_average_{centrality}', 1, 0, 1)
+                    h.SetBinContent(1, self.soft_v2_average)
                     self.output_list.append(h)
 
         # For pp, we can just save a single histogram for each
@@ -361,7 +368,7 @@ class HistogramResults(common_base.CommonBase):
                                         self.histogram_observable(column_name=f'{observable_type}_{observable}{self.suffix}{jet_collection_label}_unsubtracted',
                                                                     bins=bins, centrality=centrality, pt_suffix=pt_suffix, pt_bin=pt_bin, block=block)
                             else:
-
+                                # jet_v2 is in this category; LDU
                                 self.suffix = f'_R{jet_R}{subobservable_label}'
 
                                 bins = self.plot_utils.bins_from_config(block, self.sqrts, observable_type, observable, centrality,
@@ -548,20 +555,37 @@ class HistogramResults(common_base.CommonBase):
         h = ROOT.TH1F(hname, hname, len(bins)-1, bins)
         h.Sumw2()
 
-        if "hadron_correlations_v2" or "dijet_v2" in hname:
-            # for v2 calculation only
-            hname2 = f'h_{column_name}_denom_{centrality}{pt_suffix}'
-            h2 = ROOT.TH1F(hname2, hname2, len(bins)-1, bins)
-            h2.Sumw2()
-            # Fill histogram
-            for i,_ in enumerate(col):
+        # Only apply for v2 calculation methods
+        if "hadron_correlations_v2" in hname or "dijet_v2" in hname:
+
+            # Denominator is shared between EP and SP
+            # Create numerator for Event Plane method
+            hname_num_ep = f'h_{column_name}_num_EP_{centrality}{pt_suffix}'
+            h_num_ep = ROOT.TH1F(hname_num_ep, hname_num_ep, len(bins)-1, bins)
+            h_num_ep.Sumw2()
+
+            # Create numerator for Scalar Product method
+            hname_num_sp = f'h_{column_name}_num_SP_{centrality}{pt_suffix}'
+            h_num_sp = ROOT.TH1F(hname_num_sp, hname_num_sp, len(bins)-1, bins)
+            h_num_sp.Sumw2()
+
+            # Fill histograms
+            for i, _ in enumerate(col):
                 if col[i] is not None:
                     for value in col[i]:
-                        h.Fill(value[0], self.weights[i]*value[1])
-                        h2.Fill(value[0], self.weights[i])
-                        #print('pt=',value[0], ', cosine=',value[1], ',i=',i)
-            self.output_list.append(h)
-            self.output_list.append(h2)
+                        # Fill denominator (shared)
+                        h.Fill(value[0], self.weights[i])
+
+                        # Fill EP numerator
+                        h_num_ep.Fill(value[0], self.weights[i] * value[1])
+
+                        # Fill SP numerator
+                        h_num_sp.Fill(value[0], self.weights[i] * self.soft_particle_v2[i] * value[1])
+
+            # Append histograms to output list
+            self.output_list.append(h)           # Shared denominator
+            self.output_list.append(h_num_ep)    # Event Plane numerator
+            self.output_list.append(h_num_sp)    # Scalar Product numerator
             return
 
         # Get pt bin
