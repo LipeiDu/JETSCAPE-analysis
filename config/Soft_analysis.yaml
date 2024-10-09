@@ -10,7 +10,7 @@ n_event_max: 1000
 reader: ascii
 progress_bar: True
 merge_histograms: True
-write_Qn_histograms: True
+write_Qn_vector_histograms: True
 
 # Analysis parameters -- user-defined
 eta_min: -0.5

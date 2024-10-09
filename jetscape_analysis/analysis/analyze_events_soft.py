@@ -48,9 +48,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         self.progress_bar = config['progress_bar']
         self.merge_histograms = config['merge_histograms']
         self.selected_pid = config['selected_pid']
-        self.write_Qn_histograms = config['write_Qn_histograms']
-        
-        self.event_id = 0
+        self.write_Qn_vector_histograms = config['write_Qn_vector_histograms']
 
         self.eta_min = config['eta_min']
         self.eta_max = config['eta_max']
@@ -69,7 +67,6 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     def analyze_jetscape_events(self):
 
         # Read JETSCAPE Qn vector output and write histograms to ROOT file
-        self.input_file_Qnvector = self.input_file
         self.run_jetscape_analysis()
 
     # ---------------------------------------------------------------
@@ -77,7 +74,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # ---------------------------------------------------------------
     def run_jetscape_analysis(self):
         # Create reader class
-        all_events, total_events = self.reader_ascii(self.input_file_Qnvector)
+        all_events, total_events = self.reader_ascii(self.input_file)
         print("total_events", total_events)
 
         # Open the ROOT file
@@ -86,17 +83,17 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         # Create histograms to store the event plane angles and v2
         hist_event_plane_angles = ROOT.TH1F("hist_event_plane_angles", 
                                             "Event Plane Angles; Event ID; Psi_2", 
-                                            total_events + 1,  # Bin count to include all events
-                                            0, total_events + 1)  # Edge to include the last event ID
+                                            total_events,  # Bin count to include all events
+                                            1, total_events + 1)  # Start from 1 to total_events
 
         hist_v2_magnitudes = ROOT.TH1F("hist_v2_magnitudes", 
                                        "v2 Magnitude; Event ID; v2", 
-                                       total_events + 1, 
-                                       0, total_events + 1)
+                                       total_events, 
+                                       1, total_events + 1)
 
         # Iterate through events
         for event_id, event in all_events.items():
-            print(f"Processing event_id: {event_id}, number of entries: {len(event)}")
+            print(f"Processing event_id: {event_id}, number of entries (N_pT times N_rapidity): {len(event)}")
 
             # Initialize output objects
             self.initialize_output_objects(event_id)
@@ -108,10 +105,11 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
             # Fill the event plane angle histogram
             # Use event_id as the bin index
-            hist_event_plane_angles.Fill(event_id + 0.5, psi_2)  # Adding 0.5 to align with bin center
-            hist_v2_magnitudes.Fill(event_id + 0.5, v2)
+            hist_event_plane_angles.Fill(event_id, psi_2)
+            hist_v2_magnitudes.Fill(event_id, v2)
 
-            if self.write_Qn_histograms:
+            # Write Qn vector results in (y, pT); not necessarily needed especially when the event number is large.
+            if self.write_Qn_vector_histograms:
                 # Write analysis task output to ROOT file
                 self.write_histogram_to_file(event_id, output_file)
 
@@ -119,22 +117,20 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         hist_event_plane_angles.Write()
         hist_v2_magnitudes.Write()
 
+        # Printout below mainly for crosscheck
         # Print the histogram contents
         print("Histogram contents (Psi_2):")
         for bin_num in range(1, hist_event_plane_angles.GetNbinsX() + 1):
-            bin_center = hist_event_plane_angles.GetBinCenter(bin_num)
             bin_content = hist_event_plane_angles.GetBinContent(bin_num)
-            print(f"Event ID: {int(bin_center)}, Psi_2: {bin_content}")
+            print(f"Event ID: {bin_num}, Psi_2: {bin_content}")
 
         print("Histogram contents (v2):")
         for bin_num in range(1, hist_v2_magnitudes.GetNbinsX() + 1):
-            bin_center = hist_v2_magnitudes.GetBinCenter(bin_num)
             bin_content = hist_v2_magnitudes.GetBinContent(bin_num)
-            print(f"Event ID: {int(bin_center)}, v2: {bin_content}")
+            print(f"Event ID: {bin_num}, v2: {bin_content}")
 
-        # Close the ROOT file if it was opened
-        if self.write_Qn_histograms:
-            output_file.Close()
+        # Close the ROOT file
+        output_file.Close()
 
     # ---------------------------------------------------------------
     # Initialize output objects
@@ -159,12 +155,13 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
             y_err = result[4]
             et = result[5]
 
-            # n = 1 is skipped
+            # vn with n = 1 is skipped
             vncos = result[12]
             vncos_err = result[13]
             vnsin = result[14]
             vnsin_err = result[15]
 
+            # to get the column corresponding to dN
             dN = result[8+4*(self.n_order-1)]
 
             # Fill the histograms with errors
@@ -175,6 +172,15 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
             self.hist_vnsin.Fill(pt, y, vnsin)
             self.hist_vnsin.SetBinError(self.hist_vnsin.FindBin(pt, y), vnsin_err)
+
+    # ---------------------------------------------------------------
+    # Save all ROOT histograms and trees to file
+    # ---------------------------------------------------------------
+    def write_histogram_to_file(self, event_id, output_file):
+        output_file.cd()
+        self.hist_dN.Write()
+        self.hist_vncos.Write()
+        self.hist_vnsin.Write()
 
     # ---------------------------------------------------------------
     # Calculate necessary quantities using the histogram of Qn vector results
@@ -216,15 +222,6 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
         print(f"Event: {event_id}, Event Plane Angle (psi_2): {psi_2}, v2 magnitude: {v2}")
         return psi_2, v2
-
-    # ---------------------------------------------------------------
-    # Save all ROOT histograms and trees to file
-    # ---------------------------------------------------------------
-    def write_histogram_to_file(self, event_id, output_file):
-        output_file.cd()
-        self.hist_dN.Write()
-        self.hist_vncos.Write()
-        self.hist_vnsin.Write()
 
     # ---------------------------------------------------------------
     # Reader of the Qn vector file
@@ -304,6 +301,8 @@ if __name__ == "__main__":
 
     # Parse the arguments
     args = parser.parse_args()
+
+    print("Analyze the Qn vector to obtain event plane angles and v2s ...")
 
     # Run the analysis
     analysis = AnalyzeJetscapeEvents_Base(config_file=args.configFile, input_file=args.inputFilename, output_file=args.outputFilename)
