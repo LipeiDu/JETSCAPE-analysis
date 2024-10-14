@@ -16,6 +16,11 @@ write_Qn_vector_histograms: True
 eta_min: -0.5
 eta_max: 0.5
 
+# pT range for flow analysis
+pT_low: 0.05
+pT_high: 5.8
+
+# these parameters are used in Qn vector writer; they have to be consistent
 n_pt_bins: 30
 pt_min: 0.
 pt_max: 6.
@@ -23,5 +28,6 @@ n_y_bins: 80
 y_min: -4
 y_max: 4
 n_order: 7 # the maximum n is n_order-1
+n_oversample: 20 # number of oversamples in each event
 
 selected_pid: [9999]

@@ -13,6 +13,7 @@ import yaml
 import itertools
 import ROOT
 import argparse
+import numpy as np
 
 sys.path.append('.')
 
@@ -50,9 +51,14 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         self.selected_pid = config['selected_pid']
         self.write_Qn_vector_histograms = config['write_Qn_vector_histograms']
 
+        # analysis parameters
         self.eta_min = config['eta_min']
         self.eta_max = config['eta_max']
 
+        self.pT_low = config['pT_low']
+        self.pT_high = config['pT_high']
+
+        # parameters of Qn vector writer in JETSCAPE
         self.n_pt_bins = config['n_pt_bins']
         self.pt_min = config['pt_min']
         self.pt_max = config['pt_max']
@@ -60,11 +66,14 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         self.y_min = config['y_min']
         self.y_max = config['y_max']
         self.n_order = config['n_order']
+        self.n_oversample = config['n_oversample']
 
     # ---------------------------------------------------------------
     # Main processing function
     # ---------------------------------------------------------------
     def analyze_jetscape_events(self):
+
+        # Some preparation functions to be added
 
         # Read JETSCAPE Qn vector output and write histograms to ROOT file
         self.run_jetscape_analysis()
@@ -80,16 +89,28 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         # Open the ROOT file
         output_file = ROOT.TFile(self.output_file, "RECREATE")
 
-        # Create histograms to store the event plane angles and v2
-        hist_event_plane_angles = ROOT.TH1F("hist_event_plane_angles", 
-                                            "Event Plane Angles; Event ID; Psi_2", 
-                                            total_events,  # Bin count to include all events
-                                            1, total_events + 1)  # Start from 1 to total_events
+        # Create histograms to store charged multiplicity and mean pT
+        hist_N_tot = ROOT.TH1F(f"hist_Nch", f"charged multiplicity; Event ID; Nch",
+                                                   total_events, 1, total_events + 1)
+            
+        hist_mean_pt = ROOT.TH1F(f"hist_mean_pT", f"mean pT; Event ID; mean_pT",
+                                                   total_events, 1, total_events + 1)
 
-        hist_v2_magnitudes = ROOT.TH1F("hist_v2_magnitudes", 
-                                       "v2 Magnitude; Event ID; v2", 
-                                       total_events, 
-                                       1, total_events + 1)
+        # Create histograms to store event plane angles and vn for each n
+        hist_event_plane_angles = {}
+        hist_vn_real = {}
+        hist_vn_imag = {}
+
+        for n in range(1, self.n_order):  # Loop over n
+            hist_event_plane_angles[n] = ROOT.TH1F(f"hist_event_plane_angles_n{n}",
+                                                   f"Event Plane Angles (n={n}); Event ID; Psi_{n}",
+                                                   total_events, 1, total_events + 1)
+            
+            hist_vn_real[n] = ROOT.TH1F(f"hist_vn_real_n{n}", f"vn real (n={n}); Event ID; v{n}",
+                                              total_events, 1, total_events + 1)
+
+            hist_vn_imag[n] = ROOT.TH1F(f"hist_vn_imag_n{n}", f"vn imag (n={n}); Event ID; v{n}",
+                                              total_events, 1, total_events + 1)
 
         # Iterate through events
         for event_id, event in all_events.items():
@@ -97,100 +118,111 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
             # Initialize output objects
             self.initialize_output_objects(event_id)
+            
             # Fill histogram
             self.fill_histogram_from_qnvector(event)
 
-            # Process histogram data and get both psi_2 and v2
-            psi_2, v2 = self.process_histogram(event_id)
+            # Process histogram data to calculate observables
+            N_tot, mean_pt, psi_n_dict, vn_real_dict, vn_imag_dict = self.process_histogram(event_id)
 
-            # Fill the event plane angle histogram
-            # Use event_id as the bin index
-            hist_event_plane_angles.Fill(event_id, psi_2)
-            hist_v2_magnitudes.Fill(event_id, v2)
+            # Fill the results histograms
+            hist_N_tot.Fill(event_id, N_tot)
+            hist_mean_pt.Fill(event_id, mean_pt)
 
-            # Write Qn vector results in (y, pT); not necessarily needed especially when the event number is large.
-            if self.write_Qn_vector_histograms:
-                # Write analysis task output to ROOT file
-                self.write_histogram_to_file(event_id, output_file)
+            for n in range(1, self.n_order):
+                hist_event_plane_angles[n].Fill(event_id, psi_n_dict[n])
+                hist_vn_real[n].Fill(event_id, vn_real_dict[n])
+                hist_vn_imag[n].Fill(event_id, vn_imag_dict[n])
 
-        # Write the event plane angle histogram to the ROOT file
-        hist_event_plane_angles.Write()
-        hist_v2_magnitudes.Write()
+            # Clear histograms for memory efficiency
+            self.clear_histograms()
 
-        # Printout below mainly for crosscheck
-        # Print the histogram contents
-        print("Histogram contents (Psi_2):")
-        for bin_num in range(1, hist_event_plane_angles.GetNbinsX() + 1):
-            bin_content = hist_event_plane_angles.GetBinContent(bin_num)
-            print(f"Event ID: {bin_num}, Psi_2: {bin_content}")
+        # Write results histograms of all events to file
+        hist_N_tot.Write()
+        hist_mean_pt.Write()
 
-        print("Histogram contents (v2):")
-        for bin_num in range(1, hist_v2_magnitudes.GetNbinsX() + 1):
-            bin_content = hist_v2_magnitudes.GetBinContent(bin_num)
-            print(f"Event ID: {bin_num}, v2: {bin_content}")
+        for n in range(1, self.n_order):
+            hist_event_plane_angles[n].Write()
+            hist_vn_real[n].Write()
+            hist_vn_imag[n].Write()
 
         # Close the ROOT file
         output_file.Close()
 
     # ---------------------------------------------------------------
-    # Initialize output objects
+    # Initialize output objects for each event
     # ---------------------------------------------------------------  
     def initialize_output_objects(self, event_id):
-        # Initialize histograms for each event
-        self.hist_dN  = ROOT.TH2F(f"hist_dN_event_{event_id}", f"dN; pT; y; Event {event_id}", self.n_pt_bins, self.pt_min, self.pt_max, self.n_y_bins, self.y_min, self.y_max)
-        self.hist_vncos = ROOT.TH2F(f"hist_vncos_event_{event_id}", f"vncos; pT; y; Event {event_id}", self.n_pt_bins, self.pt_min, self.pt_max, self.n_y_bins, self.y_min, self.y_max)
-        self.hist_vnsin = ROOT.TH2F(f"hist_vnsin_event_{event_id}", f"vnsin; pT; y; Event {event_id}", self.n_pt_bins, self.pt_min, self.pt_max, self.n_y_bins, self.y_min, self.y_max)
-    
+        self.hist_dN = ROOT.TH2F(f"hist_dN_event_{event_id}", f"dN; pT; y; Event {event_id}", 
+                                 self.n_pt_bins, self.pt_min, self.pt_max, self.n_y_bins, self.y_min, self.y_max)
+
+        self.hist_vncos = {}
+        self.hist_vnsin = {}
+        
+        for n in range(1, self.n_order):  # Create histograms for each n
+            self.hist_vncos[n] = ROOT.TH2F(f"hist_vncos_event_{event_id}_n{n}", 
+                                           f"vncos (n={n}); pT; y; Event {event_id}", 
+                                           self.n_pt_bins, self.pt_min, self.pt_max, self.n_y_bins, self.y_min, self.y_max)
+            self.hist_vnsin[n] = ROOT.TH2F(f"hist_vnsin_event_{event_id}_n{n}", 
+                                           f"vnsin (n={n}); pT; y; Event {event_id}", 
+                                           self.n_pt_bins, self.pt_min, self.pt_max, self.n_y_bins, self.y_min, self.y_max)
+
     # ---------------------------------------------------------------
-    # Function to fill 2D histogram with Qn vector results
+    # Clear output objects after processing each event
+    # ---------------------------------------------------------------
+    def clear_histograms(self):
+        del self.hist_dN
+        for n in range(1, self.n_order):
+            del self.hist_vncos[n]
+            del self.hist_vnsin[n]
+
+    # ---------------------------------------------------------------
+    # Function to fill 2D histogram with Qn vector results for a single event
     # ---------------------------------------------------------------
     def fill_histogram_from_qnvector(self, qnvector_results):
 
+        # Loop over (N_pT X N_rapidity) entries of each event
+        # Note: only results for pid=9999 are read and passed to qnvector_results here
         for result in qnvector_results:
 
-            pid = result[0]
             pt = result[1]
-            pt_err = result[2]
             y = result[3]
-            y_err = result[4]
-            et = result[5]
 
-            # vn with n = 1 is skipped
-            vncos = result[12]
-            vncos_err = result[13]
-            vnsin = result[14]
-            vnsin_err = result[15]
+            # Only consider valid dN entries
+            dN = result[-1]
+            if dN <= 0:
+                continue  # Skip entries with non-positive dN
 
-            # to get the column corresponding to dN
-            dN = result[8+4*(self.n_order-1)]
+            # Loop over vn orders
+            for n in range(1, self.n_order):  
+                vncos = result[8 + (n-1)*4]
+                vncos_err = result[9 + (n-1)*4]
+                vnsin = result[10 + (n-1)*4]
+                vnsin_err = result[11 + (n-1)*4]
 
-            # Fill the histograms with errors
+                # Fill the histograms with errors
+                self.hist_vncos[n].Fill(pt, y, vncos)
+                self.hist_vncos[n].SetBinError(self.hist_vncos[n].FindBin(pt, y), vncos_err)
+                self.hist_vnsin[n].Fill(pt, y, vnsin)
+                self.hist_vnsin[n].SetBinError(self.hist_vnsin[n].FindBin(pt, y), vnsin_err)
+
             self.hist_dN.Fill(pt, y, dN)
 
-            self.hist_vncos.Fill(pt, y, vncos)
-            self.hist_vncos.SetBinError(self.hist_vncos.FindBin(pt, y), vncos_err)
-
-            self.hist_vnsin.Fill(pt, y, vnsin)
-            self.hist_vnsin.SetBinError(self.hist_vnsin.FindBin(pt, y), vnsin_err)
-
     # ---------------------------------------------------------------
-    # Save all ROOT histograms and trees to file
-    # ---------------------------------------------------------------
-    def write_histogram_to_file(self, event_id, output_file):
-        output_file.cd()
-        self.hist_dN.Write()
-        self.hist_vncos.Write()
-        self.hist_vnsin.Write()
-
-    # ---------------------------------------------------------------
-    # Calculate necessary quantities using the histogram of Qn vector results
+    # Calculate necessary quantities using the histogram of Qn vector results for a single event
     # ---------------------------------------------------------------
     def process_histogram(self, event_id):
+        """
+        This function processes 2D histograms (in pT * rapidity bins) of a single event
+        """
+        pt_values = []
+        dN_values = []
+        vncos_values = {n: [] for n in range(1, self.n_order)}
+        vnsin_values = {n: [] for n in range(1, self.n_order)}
 
-        numerator_psi2 = 0.0
-        denominator_psi2 = 0.0
-        numerator_v2 = 0.0
-        denominator_v2 = 0.0
+        # for psi_n calculation
+        vncos_sum = {n: 0.0 for n in range(1, self.n_order)}
+        vnsin_sum = {n: 0.0 for n in range(1, self.n_order)}
 
         for bin_x in range(1, self.hist_dN.GetNbinsX() + 1):
             for bin_y in range(1, self.hist_dN.GetNbinsY() + 1):
@@ -199,29 +231,85 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
                 if self.eta_min <= y <= self.eta_max:
                     dN = self.hist_dN.GetBinContent(bin_x, bin_y)
-                    vncos = self.hist_vncos.GetBinContent(bin_x, bin_y)
-                    vnsin = self.hist_vnsin.GetBinContent(bin_x, bin_y)
 
-                    # For event plane angle psi_2
-                    numerator_psi2 += vnsin * dN
-                    denominator_psi2 += vncos * dN
+                    pt_values.append(pt)
+                    dN_values.append(dN)
 
-                    # For v2 magnitude
-                    numerator_v2 += (vncos**2 + vnsin**2) * dN
-                    denominator_v2 += dN
+                    for n in range(1, self.n_order):
+                        vncos = self.hist_vncos[n].GetBinContent(bin_x, bin_y, n)
+                        vnsin = self.hist_vnsin[n].GetBinContent(bin_x, bin_y, n)
 
-        if denominator_psi2 != 0:
-            psi_2 = 0.5 * ROOT.TMath.ATan2(numerator_psi2, denominator_psi2)
+                        vncos_values[n].append(vncos)
+                        vnsin_values[n].append(vnsin)
+
+        # Ensure arrays are sorted and non-empty before interpolation
+        if len(pt_values) == 0 or len(dN_values) == 0:
+            raise ValueError("No valid entries for interpolation.")
+
+        # Convert lists to arrays for interpolation
+        pt_values = np.array(pt_values)
+        dN_values = np.array(dN_values)
+
+        # Calculate N_tot
+        N_tot = np.sum(dN_values)
+
+        # Calculate mean pT, weighted by dN
+        if N_tot > 0:
+            mean_pt = np.sum(pt_values * dN_values) / N_tot
         else:
-            psi_2 = None
+            mean_pt = 0.0  # Handle the case where no entries are valid
 
-        if denominator_v2 != 0:
-            v2 = ROOT.TMath.Sqrt(numerator_v2) / denominator_v2
-        else:
-            v2 = None
+        # Calculate dN_ch/deta: N_tot to be divided by oversample number and rapidity width
+        N_tot = N_tot / self.n_oversample / (self.eta_max - self.eta_min)
 
-        print(f"Event: {event_id}, Event Plane Angle (psi_2): {psi_2}, v2 magnitude: {v2}")
-        return psi_2, v2
+        vn_real_dict = {}
+        vn_imag_dict = {}
+        psi_n_dict = {}
+        for n in range(1, self.n_order):
+            vncos_values[n] = np.array(vncos_values[n])
+            vnsin_values[n] = np.array(vnsin_values[n])
+
+            # Now sum the values for psi_n calculation
+            vncos_sum = np.sum(vncos_values[n])
+            vnsin_sum = np.sum(vnsin_values[n])
+
+            # Calculate psi_n
+            psi_n = (1.0 / n) * np.arctan2(vnsin_sum, vncos_sum)
+            psi_n_dict[n] = psi_n
+
+        # Call the integrated vn calculation function for all n; pT cut is done inside the function
+        vn_real_dict, vn_imag_dict = self.calculate_vn_single_event(pt_values, dN_values, vncos_values, vnsin_values)
+
+        return N_tot, mean_pt, psi_n_dict, vn_real_dict, vn_imag_dict
+
+    # ---------------------------------------------------------------
+    # Calculate vn for a single event
+    # ---------------------------------------------------------------
+    def calculate_vn_single_event(self, pt_values, dN_values, vncos_values, vnsin_values):
+
+        npT = 50
+
+        pT_inte_array = np.linspace(self.pT_low, self.pT_high, npT)
+
+        # Interpolating dN values in log space
+        dN_interp = np.exp(np.interp(pT_inte_array, pt_values, np.log(dN_values + 1e-30)))
+
+        vn_real_dict = {}
+        vn_imag_dict = {}
+
+        # Loop over all n
+        for n in range(1, self.n_order):
+            vn_real_interp = np.interp(pT_inte_array, pt_values, vncos_values[n])
+            vn_imag_interp = np.interp(pT_inte_array, pt_values, vnsin_values[n])
+
+            vn_real_inte = np.sum(vn_real_interp * dN_interp) / np.sum(dN_interp)
+            vn_imag_inte = np.sum(vn_imag_interp * dN_interp) / np.sum(dN_interp)
+
+            # Store the result for this n
+            vn_real_dict[n] = vn_real_inte
+            vn_imag_dict[n] = vn_imag_inte
+
+        return vn_real_dict, vn_imag_dict
 
     # ---------------------------------------------------------------
     # Reader of the Qn vector file
@@ -230,6 +318,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         """
         This function reads Qn vector data from the specified file.
         Each event is stored in a dictionary with the event number as the key.
+        Each event has averaged over results of oversampled particle lists
         """
         all_events = {}
         current_event = []
@@ -307,7 +396,3 @@ if __name__ == "__main__":
     # Run the analysis
     analysis = AnalyzeJetscapeEvents_Base(config_file=args.configFile, input_file=args.inputFilename, output_file=args.outputFilename)
     analysis.analyze_jetscape_events()
-
-
-
-
