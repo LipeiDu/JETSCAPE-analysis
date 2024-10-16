@@ -19,6 +19,7 @@ eta_max: 0.5
 # pT range for flow analysis
 pT_low: 0.05
 pT_high: 5.8
+npT: 50
 
 # these parameters are used in Qn vector writer; they have to be consistent
 n_pt_bins: 30
