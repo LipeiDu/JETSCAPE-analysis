@@ -253,24 +253,31 @@ class HistogramResults(common_base.CommonBase):
         print(f'Histogram {observable_type} observables...')
 
         for observable, block in self.config[observable_type].items():
-            for centrality_index,centrality in enumerate(block['centrality']):
+            if "v2" in observable:
+                for method, method_block in block.items():
+                    for centrality_index, centrality in enumerate(method_block['centrality']):
+                        # Add centrality bin to list, if needed
+                        if self.is_AA and centrality not in self.observable_centrality_list:
+                            self.observable_centrality_list.append(centrality)
 
-                # Add centrality bin to list, if needed
-                if self.is_AA and centrality not in self.observable_centrality_list:
-                    self.observable_centrality_list.append(centrality)
+                        # Construct appropriate binning for v2 observables
+                        bins = self.plot_utils.bins_from_config(method_block, self.sqrts, observable_type, observable, centrality, centrality_index)
+                        if not bins.any():
+                            continue
 
-                # v2 ATLAS and CMS
-                if observable == 'v2_atlas' or observable == 'v2_cms' or observable == 'v2_alice':
-                    # Construct appropriate binning
-                    bins = self.plot_utils.bins_from_config(block, self.sqrts, observable_type, observable, centrality, centrality_index)
-                    if not bins.any():
-                        continue
-                    self.histogram_observable(column_name=f'{observable_type}_{observable}', bins=bins, centrality=centrality)
-                    if self.is_AA:
-                        self.histogram_observable(column_name=f'{observable_type}_{observable}_holes', bins=bins, centrality=centrality)
+                        # Histogram observable for method-specific column names
+                        self.histogram_observable(column_name=f'{observable_type}_{observable}_{method}', bins=bins, centrality=centrality)
+                        if self.is_AA:
+                            self.histogram_observable(column_name=f'{observable_type}_{observable}_{method}_holes', bins=bins, centrality=centrality)
 
-                # STAR dihadron
-                if observable == 'dihadron_star':
+            # Handle dihadron_star separately (no methods loop)
+            # STAR dihadron
+            elif observable == 'dihadron_star':
+                for centrality_index,centrality in enumerate(block['centrality']):
+
+                    # Add centrality bin to list, if needed
+                    if self.is_AA and centrality not in self.observable_centrality_list:
+                        self.observable_centrality_list.append(centrality)
 
                     # Construct appropriate binning
                     dphi_bins = np.array(block["dphi_bins"])
@@ -314,74 +321,99 @@ class HistogramResults(common_base.CommonBase):
         print(f'Histogram {observable_type} observables...')
 
         for observable, block in self.config[observable_type].items():
-            for centrality_index,centrality in enumerate(block['centrality']):
+            # Check if the observable is v2-related
+            if 'v2' in observable:
+                # Loop over methods within each observable
+                for method, method_block in block.items():
+                    for centrality_index, centrality in enumerate(method_block['centrality']):
 
-                # Add centrality bin to list, if needed
-                if self.is_AA and centrality not in self.observable_centrality_list:
-                    self.observable_centrality_list.append(centrality)
+                        # Add centrality bin to list, if needed
+                        if self.is_AA and centrality not in self.observable_centrality_list:
+                            self.observable_centrality_list.append(centrality)
 
-                for jet_R in block['jet_R']:
+                        for jet_R in method_block['jet_R']:
 
-                    # Custom skip
-                    if observable == 'zg_alice' or observable == 'tg_alice':
-                        if np.isclose(jet_R, 0.4) and centrality_index == 0:
-                            continue
-                        if np.isclose(jet_R, 0.2) and centrality_index == 1:
-                            continue
+                            self.suffix = f'_R{jet_R}'
 
-                    # Optional: Loop through pt bins
-                    for pt_bin in range(len(block['pt'])-1):
-
-                        # Custom skip
-                        if observable == 'xj_atlas':
-                            if centrality_index > 0 and pt_bin !=0:
+                            bins = self.plot_utils.bins_from_config(method_block, self.sqrts, observable_type, observable,
+                                                                    centrality, centrality_index, suffix=f'{self.suffix}')
+                            if not bins.any():
                                 continue
 
-                        if len(block['pt']) > 2:
-                            pt_suffix = f'_pt{pt_bin}'
-                        else:
-                            pt_suffix = ''
+                            self.histogram_observable(column_name=f'{observable_type}_{observable}_{method}{self.suffix}{jet_collection_label}',
+                                                      bins=bins, centrality=centrality, block=method_block)
+                            if jet_collection_label in ['_shower_recoil']:
+                                self.histogram_observable(column_name=f'{observable_type}_{observable}_{method}{self.suffix}{jet_collection_label}_unsubtracted',
+                                                          bins=bins, centrality=centrality, block=method_block)
 
-                        # Optional: subobservable
-                        subobservable_label_list = ['']
-                        if 'kappa' in block:
-                            subobservable_label_list = [f'_k{kappa}' for kappa in block['kappa']]
-                        if 'r' in block:
-                            subobservable_label_list = [f'_r{r}' for r in block['r']]
-                        for subobservable_label in subobservable_label_list:
+            else: # Non-v2 observables
+                for centrality_index,centrality in enumerate(block['centrality']):
 
-                            if 'SoftDrop' in block:
-                                for grooming_setting in block['SoftDrop']:
-                                    zcut = grooming_setting['zcut']
-                                    beta = grooming_setting['beta']
+                    # Add centrality bin to list, if needed
+                    if self.is_AA and centrality not in self.observable_centrality_list:
+                        self.observable_centrality_list.append(centrality)
 
-                                    self.suffix = f'_R{jet_R}_zcut{zcut}_beta{beta}{subobservable_label}'
-                                    bins = self.plot_utils.bins_from_config(block, self.sqrts, observable_type, observable,
-                                                                            centrality, centrality_index,
-                                                                            suffix=f'{self.suffix}{pt_suffix}')
+                    for jet_R in block['jet_R']:
+
+                        # Custom skip
+                        if observable == 'zg_alice' or observable == 'tg_alice':
+                            if np.isclose(jet_R, 0.4) and centrality_index == 0:
+                                continue
+                            if np.isclose(jet_R, 0.2) and centrality_index == 1:
+                                continue
+
+                        # Optional: Loop through pt bins
+                        for pt_bin in range(len(block['pt'])-1):
+
+                            # Custom skip
+                            if observable == 'xj_atlas':
+                                if centrality_index > 0 and pt_bin !=0:
+                                    continue
+
+                            if len(block['pt']) > 2:
+                                pt_suffix = f'_pt{pt_bin}'
+                            else:
+                                pt_suffix = ''
+
+                            # Optional: subobservable
+                            subobservable_label_list = ['']
+                            if 'kappa' in block:
+                                subobservable_label_list = [f'_k{kappa}' for kappa in block['kappa']]
+                            if 'r' in block:
+                                subobservable_label_list = [f'_r{r}' for r in block['r']]
+                            for subobservable_label in subobservable_label_list:
+
+                                if 'SoftDrop' in block:
+                                    for grooming_setting in block['SoftDrop']:
+                                        zcut = grooming_setting['zcut']
+                                        beta = grooming_setting['beta']
+
+                                        self.suffix = f'_R{jet_R}_zcut{zcut}_beta{beta}{subobservable_label}'
+                                        bins = self.plot_utils.bins_from_config(block, self.sqrts, observable_type, observable,
+                                                                                centrality, centrality_index,
+                                                                                suffix=f'{self.suffix}{pt_suffix}')
+                                        if not bins.any():
+                                            continue
+
+                                        self.histogram_observable(column_name=f'{observable_type}_{observable}{self.suffix}{jet_collection_label}',
+                                                                    bins=bins, centrality=centrality, pt_suffix=pt_suffix, pt_bin=pt_bin, block=block)
+                                        if jet_collection_label in ['_shower_recoil']:
+                                            self.histogram_observable(column_name=f'{observable_type}_{observable}{self.suffix}{jet_collection_label}_unsubtracted',
+                                                                        bins=bins, centrality=centrality, pt_suffix=pt_suffix, pt_bin=pt_bin, block=block)
+                                else:
+                                    self.suffix = f'_R{jet_R}{subobservable_label}'
+
+                                    bins = self.plot_utils.bins_from_config(block, self.sqrts, observable_type, observable, centrality,
+                                                                            centrality_index, suffix=f'{self.suffix}{pt_suffix}')
+
                                     if not bins.any():
                                         continue
 
                                     self.histogram_observable(column_name=f'{observable_type}_{observable}{self.suffix}{jet_collection_label}',
-                                                                bins=bins, centrality=centrality, pt_suffix=pt_suffix, pt_bin=pt_bin, block=block)
+                                                              bins=bins, centrality=centrality, pt_suffix=pt_suffix, pt_bin=pt_bin, block=block)
                                     if jet_collection_label in ['_shower_recoil']:
                                         self.histogram_observable(column_name=f'{observable_type}_{observable}{self.suffix}{jet_collection_label}_unsubtracted',
-                                                                    bins=bins, centrality=centrality, pt_suffix=pt_suffix, pt_bin=pt_bin, block=block)
-                            else:
-                                # jet_v2 is in this category; LDU
-                                self.suffix = f'_R{jet_R}{subobservable_label}'
-
-                                bins = self.plot_utils.bins_from_config(block, self.sqrts, observable_type, observable, centrality,
-                                                                        centrality_index, suffix=f'{self.suffix}{pt_suffix}')
-
-                                if not bins.any():
-                                    continue
-
-                                self.histogram_observable(column_name=f'{observable_type}_{observable}{self.suffix}{jet_collection_label}',
-                                                          bins=bins, centrality=centrality, pt_suffix=pt_suffix, pt_bin=pt_bin, block=block)
-                                if jet_collection_label in ['_shower_recoil']:
-                                    self.histogram_observable(column_name=f'{observable_type}_{observable}{self.suffix}{jet_collection_label}_unsubtracted',
-                                                            bins=bins, centrality=centrality, pt_suffix=pt_suffix, pt_bin=pt_bin, block=block)
+                                                                bins=bins, centrality=centrality, pt_suffix=pt_suffix, pt_bin=pt_bin, block=block)
 
     #-------------------------------------------------------------------------------------------
     # Histogram semi-inclusive jet observables
@@ -551,41 +583,35 @@ class HistogramResults(common_base.CommonBase):
     #-------------------------------------------------------------------------------------------
     def histogram_2d_observable(self, col, column_name=None, bins=None, centrality=None, pt_suffix='', block=None):
 
+        # The histogram name includes the method passed in column_name (e.g., "ep" or "sp") for the case of v2
+        # e.g. column_name=f'{observable_type}_{observable}_{method}'
         hname = f'h_{column_name}_{centrality}{pt_suffix}'
         h = ROOT.TH1F(hname, hname, len(bins)-1, bins)
         h.Sumw2()
 
-        # Only apply for v2 calculation methods
+        # Check if the observable is v2-related
         if "hadron_correlations_v2" in hname or "dijet_v2" in hname:
-
-            # Denominator is shared between EP and SP
-            # Create numerator for Event Plane method
-            hname_num_ep = f'h_{column_name}_num_EP_{centrality}{pt_suffix}'
-            h_num_ep = ROOT.TH1F(hname_num_ep, hname_num_ep, len(bins)-1, bins)
-            h_num_ep.Sumw2()
-
-            # Create numerator for Scalar Product method
-            hname_num_sp = f'h_{column_name}_num_SP_{centrality}{pt_suffix}'
-            h_num_sp = ROOT.TH1F(hname_num_sp, hname_num_sp, len(bins)-1, bins)
-            h_num_sp.Sumw2()
+            # Create numerator for the specified method
+            hname_num = f'h_{column_name}_num_{centrality}{pt_suffix}'
+            h_num = ROOT.TH1F(hname_num, hname_num, len(bins)-1, bins)
+            h_num.Sumw2()
 
             # Fill histograms
             for i, _ in enumerate(col):
                 if col[i] is not None:
                     for value in col[i]:
-                        # Fill denominator (shared)
+                        # Fill the denominator
                         h.Fill(value[0], self.weights[i])
 
-                        # Fill EP numerator
-                        h_num_ep.Fill(value[0], self.weights[i] * value[1])
+                        # Fill the numerator based on the calculation method in column_name
+                        if '_ep' in column_name:
+                            h_num.Fill(value[0], self.weights[i] * value[1])
+                        elif '_sp' in column_name:
+                            h_num.Fill(value[0], self.weights[i] * self.soft_particle_v2[i] * value[1])
 
-                        # Fill SP numerator
-                        h_num_sp.Fill(value[0], self.weights[i] * self.soft_particle_v2[i] * value[1])
-
-            # Append histograms to output list
-            self.output_list.append(h)           # Shared denominator
-            self.output_list.append(h_num_ep)    # Event Plane numerator
-            self.output_list.append(h_num_sp)    # Scalar Product numerator
+            # Append histograms to the output list
+            self.output_list.append(h)    # Denominator
+            self.output_list.append(h_num)  # Method-specific numerator
             return
 
         # Get pt bin
@@ -593,8 +619,8 @@ class HistogramResults(common_base.CommonBase):
         pt_min = block['pt'][pt_index]
         pt_max = block['pt'][pt_index+1]
 
-        # Fill histogram
-        for i,_ in enumerate(col):
+        # Fill histogram for non-v2 observables
+        for i, _ in enumerate(col):
             if col[i] is not None:
                 for value in col[i]:
                     if pt_min < value[0] < pt_max:

@@ -143,71 +143,133 @@ hadron:
 #------------------------------------------------------------------
 # Hadron correlations
 hadron_correlations:
-
+  # the YAML configuration for v2 should include both observables and methods with the correct structure and kinematic cuts
   # https://www.hepdata.net/record/ins1686834
   # Fig 5 (scalar product method)
   # TODO: Implement this observable
   v2_atlas:
-    eta_cut: 2.5
-    pt: [5., 60.]
-    centrality: [[0,5], [5,10], [10,20], [20,30], [30,40], [40,50]]
-    xtitle: '#it{p}_{T} (GeV/#it{c})'
+    ep:  # Event Plane method; placeholder
+      eta_cut: 2.5
+      #pt: [5., 60.]
+      pt: [0.2, 60.] # LDU make pt small enough to avoid empty histogram for tests
+      centrality: [[0,5], [5,10], [10,20], [20,30], [30,40], [40,50]]
+      xtitle: '#it{p}_{T} (GeV/#it{c})'
 
-    hepdata: 'HEPData-ins1686834-v1-root.root'
-    hepdata_pp_dir: 'Table 11'
-    hepdata_pp_gname: 'Graph1D_y1'
-    ytitle_pp: '#it{v}_{2}(SP)'
-    y_min_pp: 0.3
-    y_max_pp: 0.
+      hepdata: 'HEPData-ins1686834-v1-root.root'
+      hepdata_pp_dir: 'Table 11'
+      hepdata_pp_gname: 'Graph1D_y1'
+      ytitle_pp: '#it{v}_{2}(EP)'
+      y_min_pp: 0.3
+      y_max_pp: 0.
 
-    hepdata_AA_dir: ['Table 3', 'Table 4', 'Table 5', 'Table 6', 'Table 7', 'Table 8']
-    hepdata_AA_gname: 'Graph1D_y1'
-    hepdata_AA_hname: 'Hist1D_y1'
-    ytitle_AA: '#it{v}_{2}(SP)'
+      hepdata_AA_dir: ['Table 3', 'Table 4', 'Table 5', 'Table 6', 'Table 7', 'Table 8']
+      hepdata_AA_gname: 'Graph1D_y1'
+      hepdata_AA_hname: 'Hist1D_y1'
+      ytitle_AA: '#it{v}_{2}(EP)'
+
+    sp:  # Scalar Product method
+      eta_cut: 2.5
+      #pt: [5., 60.]
+      pt: [0.2, 60.] # LDU make pt small enough to avoid empty histogram for tests
+      centrality: [[0,5], [5,10], [10,20], [20,30], [30,40], [40,50]]
+      xtitle: '#it{p}_{T} (GeV/#it{c})'
+
+      hepdata: 'HEPData-ins1686834-v1-root.root'
+      hepdata_pp_dir: 'Table 11'
+      hepdata_pp_gname: 'Graph1D_y1'
+      ytitle_pp: '#it{v}_{2}(SP)'
+      y_min_pp: 0.3
+      y_max_pp: 0.
+
+      hepdata_AA_dir: ['Table 3', 'Table 4', 'Table 5', 'Table 6', 'Table 7', 'Table 8']
+      hepdata_AA_gname: 'Graph1D_y1'
+      hepdata_AA_hname: 'Hist1D_y1'
+      ytitle_AA: '#it{v}_{2}(SP)'
 
   # https://www.hepdata.net/record/ins1511868
   # Fig 1 (scalar product method)
   # Note: histogram binnings are not provided
   # TODO: Implement this observable
   v2_cms:
-    eta_cut: 1.
-    pt: [5., 100.]
-    pt_min: 1.
-    centrality: [[0,5], [5,10], [10,20], [20,30], [30,40], [40,50]]
-    xtitle: '#it{p}_{T} (GeV/#it{c})'
+    ep:  # Event Plane method
+      eta_cut: 1.
+      # pt: [5., 100.]
+      pt: [0.2, 60.] # LDU make pt small enough to avoid empty histogram for tests
+      pt_min: 1.
+      centrality: [[0,5], [5,10], [10,20], [20,30], [30,40], [40,50]]
+      xtitle: '#it{p}_{T} (GeV/#it{c})'
 
-    hepdata: 'HEPData-ins1511868-v1-root.root'
-    hepdata_pp_dir: 'Table 7'
-    hepdata_pp_gname: 'Graph1D_y1'
-    ytitle_pp: '#it{v}_{2}(SP)'
-    y_min_pp: 0.3
-    y_max_pp: 0.
+      hepdata: 'HEPData-ins1511868-v1-root.root'
+      hepdata_pp_dir: 'Table 7'
+      hepdata_pp_gname: 'Graph1D_y1'
+      ytitle_pp: '#it{v}_{2}(SP)'
+      y_min_pp: 0.3
+      y_max_pp: 0.
 
-    hepdata_AA_dir: ['Table 1', 'Table 2', 'Table 3', 'Table 4', 'Table 5', 'Table 6']
-    hepdata_AA_gname: 'Graph1D_y1'
-    ytitle_AA: '#it{v}_{2}(SP)'
+      hepdata_AA_dir: ['Table 1', 'Table 2', 'Table 3', 'Table 4', 'Table 5', 'Table 6']
+      hepdata_AA_gname: 'Graph1D_y1'
+      ytitle_AA: '#it{v}_{2}(SP)'
+
+    sp:  # Scalar Product method
+      eta_cut: 1.
+      # pt: [5., 100.]
+      pt: [0.2, 60.] # LDU make pt small enough to avoid empty histogram for tests
+      pt_min: 1.
+      centrality: [[0,5], [5,10], [10,20], [20,30], [30,40], [40,50]]
+      xtitle: '#it{p}_{T} (GeV/#it{c})'
+
+      hepdata: 'HEPData-ins1511868-v1-root.root'
+      hepdata_pp_dir: 'Table 7'
+      hepdata_pp_gname: 'Graph1D_y1'
+      ytitle_pp: '#it{v}_{2}(SP)'
+      y_min_pp: 0.3
+      y_max_pp: 0.
+
+      hepdata_AA_dir: ['Table 1', 'Table 2', 'Table 3', 'Table 4', 'Table 5', 'Table 6']
+      hepdata_AA_gname: 'Graph1D_y1'
+      ytitle_AA: '#it{v}_{2}(SP)'
 
   # https://www.hepdata.net/record/ins1666817
   # Fig 4 (scalar product method)
   # TODO: Implement this observable
   v2_alice:
-    eta_cut: 0.8
-    pt: [0.2, 50.]
-    pt_min: 0.2 # check how it is used
-    centrality: [[0,5], [5,10], [10,20], [20,30], [30,40], [40,50]]
-    xtitle: '#it{p}_{T} (GeV/#it{c})'
+    ep:  # Event Plane method
+      eta_cut: 0.8
+      pt: [0.2, 50.]
+      pt_min: 0.2 # check how it is used
+      centrality: [[0,5], [5,10], [10,20], [20,30], [30,40], [40,50]]
+      xtitle: '#it{p}_{T} (GeV/#it{c})'
 
-    hepdata: 'HEPData-ins1666817-v1-root.root'
-    hepdata_pp_dir: 'Table 131' # peripheral collisions
-    hepdata_pp_gname: 'Graph1D_y1'
-    ytitle_pp: '#it{v}_{2}(SP)'
-    y_min_pp: 0.3
-    y_max_pp: 0.
+      hepdata: 'HEPData-ins1666817-v1-root.root'
+      hepdata_pp_dir: 'Table 131' # peripheral collisions
+      hepdata_pp_gname: 'Graph1D_y1'
+      ytitle_pp: '#it{v}_{2}(EP)'
+      y_min_pp: 0.3
+      y_max_pp: 0.
 
-    hepdata_AA_dir: ['Table 89', 'Table 95', 'Table 101', 'Table 107', 'Table 113', 'Table 119']
-    hepdata_AA_gname: 'Graph1D_y1'
-    hepdata_AA_hname: 'Hist1D_y1'
-    ytitle_AA: '#it{v}_{2}(SP)'
+      hepdata_AA_dir: ['Table 89', 'Table 95', 'Table 101', 'Table 107', 'Table 113', 'Table 119']
+      hepdata_AA_gname: 'Graph1D_y1'
+      hepdata_AA_hname: 'Hist1D_y1'
+      ytitle_AA: '#it{v}_{2}(EP)'
+
+    sp:  # Scalar Product method
+      eta_cut: 0.8
+      pt: [0.2, 50.]
+      pt_min: 0.2 # check how it is used
+      centrality: [[0,5], [5,10], [10,20], [20,30], [30,40], [40,50]]
+      xtitle: '#it{p}_{T} (GeV/#it{c})'
+
+      hepdata: 'HEPData-ins1666817-v1-root.root'
+      hepdata_pp_dir: 'Table 131' # peripheral collisions
+      hepdata_pp_gname: 'Graph1D_y1'
+      ytitle_pp: '#it{v}_{2}(SP)'
+      y_min_pp: 0.3
+      y_max_pp: 0.
+
+      hepdata_AA_dir: ['Table 89', 'Table 95', 'Table 101', 'Table 107', 'Table 113', 'Table 119']
+      hepdata_AA_gname: 'Graph1D_y1'
+      hepdata_AA_hname: 'Hist1D_y1'
+      ytitle_AA: '#it{v}_{2}(SP)'
 
 #------------------------------------------------------------------
 #------------------------------------------------------------------
@@ -696,22 +758,42 @@ dijet:
   # https://www.hepdata.net/record/ins1967021
   # TODO: Implement this observable
   v2_atlas:
-    jet_R: [0.2]
-    pt: [71., 398.]
-    eta_cut: 1.2
-    centrality: [[0, 5], [5, 10], [10, 20], [20, 40]]
-    pt_min: 0.2 # check how it is used
-    xtitle: '#it{p}_{T} (GeV/#it{c})'
+    ep:  # Event Plane method; placeholder
+      jet_R: [0.2]
+      pt: [0., 398.]
+      eta_cut: 5.
+      centrality: [[0, 5], [5, 10], [10, 20], [20, 40]]
+      pt_min: 0.02 # check how it is used
+      xtitle: '#it{p}_{T} (GeV/#it{c})'
 
-    hepdata: 'HEPData-ins1967021-v1-root.root'
-    hepdata_pp_dir: 'Aux. Figure 4' # 40-60% collisions
-    hepdata_pp_gname: 'Graph1D_y1'
-    ytitle_pp: '#it{v}_{2}(SP)'
-    y_min_pp: 0.3
-    y_max_pp: 0.
+      hepdata: 'HEPData-ins1967021-v1-root.root'
+      hepdata_pp_dir: 'Aux. Figure 4' # 40-60% collisions
+      hepdata_pp_gname: 'Graph1D_y1'
+      ytitle_pp: '#it{v}_{2}(SP)'
+      y_min_pp: 0.3
+      y_max_pp: 0.
 
-    hepdata_AA_dir: ['Aux. Figure 6', 'Aux. Figure 5', 'Figure 10a', 'Figure 11a']
-    hepdata_AA_gname: 'Graph1D_y1'
-    hepdata_AA_hname: 'Hist1D_y1'
-    ytitle_AA: '#it{v}_{2}(SP)'
+      hepdata_AA_dir: ['Aux. Figure 6', 'Aux. Figure 5', 'Figure 10a', 'Figure 11a']
+      hepdata_AA_gname: 'Graph1D_y1'
+      hepdata_AA_hname: 'Hist1D_y1'
+      ytitle_AA: '#it{v}_{2}(SP)'
 
+    sp:  # Scalar Product method
+      jet_R: [0.2]
+      pt: [71., 398.]
+      eta_cut: 1.2
+      centrality: [[0, 5], [5, 10], [10, 20], [20, 40]]
+      pt_min: 0.2 # check how it is used
+      xtitle: '#it{p}_{T} (GeV/#it{c})'
+
+      hepdata: 'HEPData-ins1967021-v1-root.root'
+      hepdata_pp_dir: 'Aux. Figure 4' # 40-60% collisions
+      hepdata_pp_gname: 'Graph1D_y1'
+      ytitle_pp: '#it{v}_{2}(SP)'
+      y_min_pp: 0.3
+      y_max_pp: 0.
+
+      hepdata_AA_dir: ['Aux. Figure 6', 'Aux. Figure 5', 'Figure 10a', 'Figure 11a']
+      hepdata_AA_gname: 'Graph1D_y1'
+      hepdata_AA_hname: 'Hist1D_y1'
+      ytitle_AA: '#it{v}_{2}(SP)'

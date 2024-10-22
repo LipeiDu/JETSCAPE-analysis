@@ -284,28 +284,21 @@ class AnalyzeJetscapeEvents_STAT(analyze_events_base_STAT.AnalyzeJetscapeEvents_
 
             if self.sqrts in [5020]:
                 # Charged hadrons (e-, mu-, pi+, K+, p+, Sigma+, Sigma-, Xi-, Omega-)
-                if self.centrality_accepted(self.hadron_correlation_observables['v2_atlas']['centrality']):
-                    pt_min = self.hadron_correlation_observables['v2_atlas']['pt'][0]
-                    pt_max = self.hadron_correlation_observables['v2_atlas']['pt'][1]
-                    if pt > pt_min and pt < pt_max:
-                        if abs(eta) < self.hadron_correlation_observables['v2_atlas']['eta_cut']:
-                            if abs(pid) in [11, 13, 211, 321, 2212, 3222, 3112, 3312, 3334]:
-                                self.observable_dict_event[f'hadron_correlations_v2_atlas{suffix}'].append([pt,CosineDPhi])
-                if self.centrality_accepted(self.hadron_correlation_observables['v2_cms']['centrality']):
-                    pt_min = self.hadron_correlation_observables['v2_cms']['pt'][0]
-                    pt_max = self.hadron_correlation_observables['v2_cms']['pt'][1]
-                    if pt > pt_min and pt < pt_max:
-                        if abs(eta) < self.hadron_correlation_observables['v2_cms']['eta_cut']:
-                            if abs(pid) in [11, 13, 211, 321, 2212, 3222, 3112, 3312, 3334]:
-                                self.observable_dict_event[f'hadron_correlations_v2_cms{suffix}'].append([pt,CosineDPhi])
-                if self.centrality_accepted(self.hadron_correlation_observables['v2_alice']['centrality']):
-                    pt_min = self.hadron_correlation_observables['v2_alice']['pt'][0]
-                    pt_max = self.hadron_correlation_observables['v2_alice']['pt'][1]
-                    if pt > pt_min and pt < pt_max:
-                        if abs(eta) < self.hadron_correlation_observables['v2_alice']['eta_cut']:
-                            if abs(pid) in [11, 13, 211, 321, 2212, 3222, 3112, 3312, 3334]:
-                                self.observable_dict_event[f'hadron_correlations_v2_alice{suffix}'].append([pt,CosineDPhi])
 
+                # Loop through observables in hadron_correlation_observables
+                for observable, methods_dict in self.hadron_correlation_observables.items():
+                    if "v2" in observable:
+                        # Loop through methods within each observable; methods such as EP or SP
+                        for method, method_block in methods_dict.items():
+                            if self.centrality_accepted(method_block['centrality']):
+                                pt_min = method_block['pt'][0]
+                                pt_max = method_block['pt'][1]
+                                eta_cut = method_block['eta_cut']
+
+                                if pt_min < pt < pt_max and abs(eta) < eta_cut:
+                                    if abs(pid) in [11, 13, 211, 321, 2212, 3222, 3112, 3312, 3334]:
+                                        # Add the observable and method to the key in observable_dict_event
+                                        self.observable_dict_event[f'hadron_correlations_{observable}_{method}{suffix}'].append([pt, CosineDPhi])
 
         # NOTE: The loop order here is different than other functions because without some optimization,
         #       it's very easy to have an O(n^2) loop looking for trigger and associated particles.
@@ -1349,32 +1342,36 @@ class AnalyzeJetscapeEvents_STAT(analyze_events_base_STAT.AnalyzeJetscapeEvents_
             #    - For negative_recombiner case, no subtraction is needed
             #    - For constituent_subtraction, no subtraction is needed
             # for hadron correlation, a suffix label is used, separating holes; LDU
-            if self.centrality_accepted(self.dijet_observables['v2_atlas']['centrality']):
-                pt_min = self.dijet_observables['v2_atlas']['pt'][0]
-                pt_max = self.dijet_observables['v2_atlas']['pt'][-1]
 
-                if jetR in self.dijet_observables['v2_atlas']['jet_R']:
+            # Loop through observables in dijet category
+            for observable, methods_dict in self.dijet_observables.items():
+                if "v2" in observable:
+                    # Loop through methods within each observable
+                    for method, method_block in methods_dict.items():
+                        if self.centrality_accepted(method_block['centrality']):
+                            pt_min = method_block['pt'][0]
+                            pt_max = method_block['pt'][-1]
 
-                        # First, find jets passing kinematic cuts
-                        for jet in jets_selected:
+                            if jetR in method_block['jet_R']:
+                                # First, find jets passing kinematic cuts
+                                for jet in jets_selected:
 
-                            # jet_pt = None
+                                    if jet_collection_label in ['_shower_recoil']:
+                                        # Get the corrected jet pt by subtracting the negative recoils within R
+                                        jet_pt = jet.pt()
+                                        if fj_hadrons_negative:
+                                            for temp_hadron in fj_hadrons_negative:
+                                                if jet.delta_R(temp_hadron) < jetR:
+                                                    jet_pt -= temp_hadron.pt()
+                                    else:
+                                         jet_pt = jet.pt()
 
-                            if jet_collection_label in ['_shower_recoil']:
-                                # Get the corrected jet pt by subtracting the negative recoils within R
-                                jet_pt = jet.pt()
-                                if fj_hadrons_negative:
-                                    for temp_hadron in fj_hadrons_negative:
-                                        if jet.delta_R(temp_hadron) < jetR:
-                                            jet_pt -= temp_hadron.pt()
-                            else:
-                                 jet_pt = jet.pt()
-
-                            if abs(jet.eta()) < (self.dijet_observables['v2_atlas']['eta_cut']):
-                                if pt_min < jet_pt < pt_max:
-                                    CosineDPhi = np.cos(2.0*(jet.phi() - event_plane_angle))
-
-                                    self.observable_dict_event[f'dijet_v2_atlas_R{jetR}{jet_collection_label}'].append([jet_pt,CosineDPhi])
+                                    # Check if the jet passes kinematic cuts
+                                    if abs(jet.eta()) < method_block['eta_cut']:
+                                        if pt_min < jet_pt < pt_max:
+                                            CosineDPhi = np.cos(2.0 * (jet.phi() - event_plane_angle))
+                                            # Append data to observable_dict_event
+                                            self.observable_dict_event[f'dijet_{observable}_{method}_R{jetR}{jet_collection_label}'].append([jet_pt, CosineDPhi])
 
     #---------------------------------------------------------------
     # Return leading jet (or subjet)
