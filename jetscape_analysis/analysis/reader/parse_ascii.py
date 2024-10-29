@@ -749,7 +749,7 @@ def parse_to_parquet(
     max_chunks: int = -1,
     compression: str = "zstd",
     compression_level: int | None = None,
-    custom_event_plane_angles: dict = None,
+    load_soft_analysis_results: dict = None,
 ) -> None:
     """Parse the JETSCAPE ASCII and convert it to parquet, (potentially) storing only the minimum necessary columns.
 
@@ -763,7 +763,7 @@ def parse_to_parquet(
         compression: Compression algorithm for parquet. Default: "zstd". Options include: ["snappy", "gzip", "ztsd"].
             "gzip" is slightly better for storage, but slower. See the compression tests and parquet docs for more.
         compression_level: Compression level for parquet. Default: `None`, which lets parquet choose the best value.
-        custom_event_plane_angles: Optional dictionary of custom event plane angles to replace the ones in the input file.
+        load_soft_analysis_results: Optional dictionary of custom event plane angles to replace the ones in the input file.
     Returns:
         None. The parsed events are stored in parquet files.
     """
@@ -775,7 +775,7 @@ def parse_to_parquet(
     for i, arrays in enumerate(read(filename=input_filename, events_per_chunk=events_per_chunk, parser=parser)):
 
         # Replace event plane angles if custom values are provided
-        if custom_event_plane_angles:
+        if load_soft_analysis_results:
             # Convert awkward array to a list of dictionaries
             event_list = ak.to_list(arrays)
             
@@ -783,8 +783,8 @@ def parse_to_parquet(
             updated_event_list = []
             for event in event_list:
                 event_id = event.get("event_ID")
-                if event_id in custom_event_plane_angles:
-                    psi_2, v2 = custom_event_plane_angles[event_id]
+                if event_id in load_soft_analysis_results:
+                    psi_2, v2 = load_soft_analysis_results[event_id]
                     event["event_plane_angle"] = psi_2
                     event["soft_v2"] = v2  # Add or update v2
                 updated_event_list.append(event)

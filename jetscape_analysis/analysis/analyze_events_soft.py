@@ -141,6 +141,10 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # Function to fill 2D histogram with Qn vector results for a single event
     # ---------------------------------------------------------------
     def fill_qnvector_histogram(self, qnvector_results):
+        """
+        In qnvector histograms, only dNdpTdy is averaged over oversamples; the other ones are summed over oversamples
+
+        """
 
         # Loop over (N_pT X N_rapidity) entries of each event
         # Note: only results for pid=9999 are read and passed to qnvector_results here
@@ -191,7 +195,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         and reduces them to 1D histograms in pT by summing contributions over rapidity (y) bins.
         """
 
-        # I. Obtain 1D arrays in pT from 2D histograms in pT and rapidity of a single event (with oversamples included)
+        # I. Obtain 1D arrays in pT from 2D histograms in pT and rapidity of a single event (with oversamples summed over)
 
         # Lists in pT
         pt_values = []
@@ -270,7 +274,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
         # Calculate psi_n for each harmonic n
         for n in range(1, self.n_order):
-            # Sum vncos and vnsin for psi_n calculation
+            # Sum vncos and vnsin across pT for psi_n calculation
             vncos_sum = np.sum(vncos_values[n])
             vnsin_sum = np.sum(vnsin_values[n])
 
@@ -380,10 +384,10 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # Calculate histograms for results
     # ---------------------------------------------------------------
     def initialize_result_histograms(self, total_events, npT, pT_min, pT_max):
-        hist_N_tot = ROOT.TH1F(f"hist_Nch", f"charged multiplicity; Event ID; Nch", total_events, 1, total_events + 1)
+        hist_dNdeta = ROOT.TH1F(f"hist_dNchdeta", f"charged multiplicity; Event ID; Nch", total_events, 1, total_events + 1)
         hist_mean_pt = ROOT.TH1F(f"hist_mean_pT", f"mean pT; Event ID; mean_pT", total_events, 1, total_events + 1)
 
-        hist_event_plane_angles = {}
+        hist_psi = {}
 
         hist_vn_real = {}
         hist_vn_imag = {}
@@ -401,7 +405,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         hist_N_Qn_ref = ROOT.TH1F(f"hist_N_Qn_ref", f"hist_N_Qn_ref; Event ID; N_Qn_ref", total_events, 1, total_events + 1)
 
         for n in range(1, self.n_order):
-            hist_event_plane_angles[n] = ROOT.TH1F(f"hist_event_plane_angles_n{n}", f"Event Plane Angles (n={n}); Event ID; Psi_{n}", total_events, 1, total_events + 1)
+            hist_psi[n] = ROOT.TH1F(f"hist_psi_n{n}", f"Event Plane Angles (n={n}); Event ID; Psi_{n}", total_events, 1, total_events + 1)
 
             hist_vn_real[n] = ROOT.TH1F(f"hist_vn_real_n{n}", f"vn real (n={n}); Event ID; v{n}", total_events, 1, total_events + 1)
             hist_vn_imag[n] = ROOT.TH1F(f"hist_vn_imag_n{n}", f"vn imag (n={n}); Event ID; v{n}", total_events, 1, total_events + 1)
@@ -415,9 +419,9 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
             
 
         return {
-            'hist_N_tot': hist_N_tot,
+            'hist_dNdeta': hist_dNdeta,
             'hist_mean_pt': hist_mean_pt,
-            'hist_event_plane_angles': hist_event_plane_angles,
+            'hist_psi': hist_psi,
             'hist_vn_real': hist_vn_real,
             'hist_vn_imag': hist_vn_imag,
             'hist_N_vn': hist_N_vn,
@@ -433,7 +437,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # Fill histograms of results
     # ---------------------------------------------------------------
     def fill_result_histograms(self, histograms, event_id, dNdeta, mean_pt, psi_n_dict, pt_values, N_vn, vn_real_array, vn_imag_array, N_Qn_pT_array, Qn_pT_real_array, Qn_pT_imag_array, N_Qn_ref, Qn_ref_real_array, Qn_ref_imag_array):
-        histograms['hist_N_tot'].Fill(event_id, dNdeta)
+        histograms['hist_dNdeta'].Fill(event_id, dNdeta)
         histograms['hist_mean_pt'].Fill(event_id, mean_pt)
 
         # Fill N_vn, N_Qn_pT, and N_Qn_ref (shared across all harmonics n)
@@ -444,7 +448,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
             histograms['hist_N_Qn_pT'].Fill(event_id, pt_values[i], N_Qn_pT)
 
         for n in range(1, self.n_order):
-            histograms['hist_event_plane_angles'][n].Fill(event_id, psi_n_dict[n])
+            histograms['hist_psi'][n].Fill(event_id, psi_n_dict[n])
 
             histograms['hist_vn_real'][n].Fill(event_id, float(vn_real_array[n - 1]))
             histograms['hist_vn_imag'][n].Fill(event_id, float(vn_imag_array[n - 1]))
@@ -462,14 +466,14 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # Write histograms of results
     # ---------------------------------------------------------------
     def write_result_histograms(self, histograms):
-        histograms['hist_N_tot'].Write()
+        histograms['hist_dNdeta'].Write()
         histograms['hist_mean_pt'].Write()
         histograms['hist_N_vn'].Write()
         histograms['hist_N_Qn_ref'].Write()
         histograms['hist_N_Qn_pT'].Write()
 
         for n in range(1, self.n_order):
-            histograms['hist_event_plane_angles'][n].Write()
+            histograms['hist_psi'][n].Write()
             histograms['hist_vn_real'][n].Write()
             histograms['hist_vn_imag'][n].Write()
             histograms['hist_Qn_pT_real'][n].Write()
