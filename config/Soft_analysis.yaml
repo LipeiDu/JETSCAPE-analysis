@@ -1,3 +1,5 @@
+sqrt_s: 5020
+
 # Common parameters
 debug_level: 0
 
@@ -32,3 +34,30 @@ n_order: 7 # the maximum n is n_order-1
 n_oversample: 20 # number of oversamples in each event
 
 selected_pid: [9999]
+
+multiplicity:
+  centrality: [[0,2.5], [2.5, 5], [5, 7.5], [7.5, 10], [10,20], [20,30], [30,40], [40,50]]
+  xtitle: 'centrality'
+  logy: False
+
+  hepdata: 'HEPData-ins1410589-v1-root.root'
+
+  hepdata_AA_dir: 'Table 2'
+  hepdata_AA_gname: ['Graph1D_y1']
+  hepdata_AA_hname: ['Hist1D_y1']
+  ytitle_AA: '#it{dN}_{ch}/deta'
+
+pt_differential_flows:
+  v2_alice:
+    pt: [0., 140.]
+    centrality: [[0,5]]
+    xtitle: '#it{p}_{T,jet} (GeV/#it{c})'
+    logy: False
+
+    hepdata: 'HEPData-ins1666817-v1-root.root'
+    hepdata_AA_dir: ['Table 15']
+    hepdata_AA_gname: 'Graph1D_y1'
+    hepdata_AA_hname: 'Hist1D_y1'
+    ytitle_AA: 'v_{2}'
+    y_min_AA: 0.
+    y_max_AA: 1.9

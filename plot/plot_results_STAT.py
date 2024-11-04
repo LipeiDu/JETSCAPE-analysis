@@ -814,7 +814,7 @@ class PlotResults(common_base.CommonBase):
                         h_denom_holes_i = 0.0
                         h_num_i = 0.0
 
-                    self.observable_settings[f'jetscape_distribution'].SetBinContent(i, (h_num_i - h_num_holes_i)/(h_denom_i - h_denom_holes_i) )
+                    self.observable_settings[f'jetscape_distribution'].SetBinContent(i, (h_num_i - h_num_holes_i)/(h_denom_i - h_denom_holes_i + 1.e-20) )
                     self.observable_settings[f'jetscape_distribution_unsubtracted'].SetBinContent(i,h_num_i/h_denom_i)
 
                 self.observable_settings[f'jetscape_distribution'].SetName(f'jetscape_distribution_{observable_type}_{observable}{method}_{centrality}')
