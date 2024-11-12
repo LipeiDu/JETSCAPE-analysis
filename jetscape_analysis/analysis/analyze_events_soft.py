@@ -411,8 +411,8 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
             vn_ref_imag_inte = (
                 np.sum(vn_ref_imag_interp * dN_ref_interp) / np.sum(dN_ref_interp)
             )
-            Qn_ref_real_array.append(vn_ref_real_inte)
-            Qn_ref_imag_array.append(vn_ref_imag_inte)
+            Qn_ref_real_array.append(dN_ref * vn_ref_real_inte)
+            Qn_ref_imag_array.append(dN_ref * vn_ref_imag_inte)
 
             Qn_pt_real = dN_values * vncos_values[iorder]
             Qn_pt_imag = dN_values * vnsin_values[iorder]
@@ -429,22 +429,22 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         hist_dNdeta = ROOT.TH1F(f"hist_dNchdeta", f"charged multiplicity; Event ID; Nch", total_events, 1, total_events + 1)
         hist_mean_pt = ROOT.TH1F(f"hist_mean_pT", f"mean pT; Event ID; mean_pT", total_events, 1, total_events + 1)
 
-        hist_psi = {}
-
-        hist_vn_real = {}
-        hist_vn_imag = {}
-        hist_N_vn = {}
-
-        hist_Qn_pT_real = {}
-        hist_Qn_pT_imag = {}
-        hist_N_Qn_pT = {}
-        hist_Qn_ref_real = {}
-        hist_Qn_ref_imag = {}
-        hist_N_Qn_ref = {}
-
         hist_N_vn = ROOT.TH1F(f"hist_N_vn", f"hist_N_vn; Event ID; N_vn", total_events, 1, total_events + 1)
         hist_N_Qn_pT = ROOT.TH2F(f"hist_N_Qn_pT", f"hist_N_Qn_pT; Event ID; pT; N_Qn_pT", total_events, 1, total_events + 1, npT, pT_min, pT_max)
         hist_N_Qn_ref = ROOT.TH1F(f"hist_N_Qn_ref", f"hist_N_Qn_ref; Event ID; N_Qn_ref", total_events, 1, total_events + 1)
+
+        hist_psi = {}
+
+        # integrated flows
+        hist_vn_real = {}
+        hist_vn_imag = {}
+
+        # pT different flows
+        hist_Qn_ref_real = {}
+        hist_Qn_ref_imag = {}
+
+        hist_Qn_pT_real = {}
+        hist_Qn_pT_imag = {}
 
         for n in range(1, self.n_order):
             hist_psi[n] = ROOT.TH1F(f"hist_psi_n{n}", f"Event Plane Angles (n={n}); Event ID; Psi_{n}", total_events, 1, total_events + 1)
@@ -452,13 +452,12 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
             hist_vn_real[n] = ROOT.TH1F(f"hist_vn_real_n{n}", f"vn real (n={n}); Event ID; v{n}", total_events, 1, total_events + 1)
             hist_vn_imag[n] = ROOT.TH1F(f"hist_vn_imag_n{n}", f"vn imag (n={n}); Event ID; v{n}", total_events, 1, total_events + 1)
             
-            # 2D histogram for Qn_pT (pT vs Event ID)
-            hist_Qn_pT_real[n] = ROOT.TH2F(f"hist_Qn_pT_real_n{n}", f"Qn pT real (n={n}); Event ID; pT; Qn", total_events, 1, total_events + 1, npT, pT_min, pT_max)
-            hist_Qn_pT_imag[n] = ROOT.TH2F(f"hist_Qn_pT_imag_n{n}", f"Qn pT imag (n={n}); Event ID; pT; Qn", total_events, 1, total_events + 1, npT, pT_min, pT_max)
-            
             hist_Qn_ref_real[n] = ROOT.TH1F(f"hist_Qn_ref_real_n{n}", f"Qn ref real (n={n}); Event ID; Qn_ref", total_events, 1, total_events + 1)
             hist_Qn_ref_imag[n] = ROOT.TH1F(f"hist_Qn_ref_imag_n{n}", f"Qn ref imag (n={n}); Event ID; Qn_ref", total_events, 1, total_events + 1)
-            
+
+            # 2D histogram for Qn_pT (pT vs Event ID)
+            hist_Qn_pT_real[n] = ROOT.TH2F(f"hist_Qn_pT_real_n{n}", f"Qn pT real (n={n}); Event ID; pT; Qn", total_events, 1, total_events + 1, npT, pT_min, pT_max)
+            hist_Qn_pT_imag[n] = ROOT.TH2F(f"hist_Qn_pT_imag_n{n}", f"Qn pT imag (n={n}); Event ID; pT; Qn", total_events, 1, total_events + 1, npT, pT_min, pT_max)    
 
         return {
             'hist_dNdeta': hist_dNdeta,
@@ -478,7 +477,9 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # ---------------------------------------------------------------
     # Fill histograms of results
     # ---------------------------------------------------------------
-    def fill_result_histograms(self, histograms, event_id, dNdeta, mean_pt, psi_n_dict, pt_values, N_vn, vn_real_array, vn_imag_array, N_Qn_pT_array, Qn_pT_real_array, Qn_pT_imag_array, N_Qn_ref, Qn_ref_real_array, Qn_ref_imag_array):
+    def fill_result_histograms(self, histograms, event_id, dNdeta, mean_pt, psi_n_dict, pt_values, N_vn, vn_real_array, vn_imag_array, 
+        N_Qn_pT_array, Qn_pT_real_array, Qn_pT_imag_array, N_Qn_ref, Qn_ref_real_array, Qn_ref_imag_array):
+    
         histograms['hist_dNdeta'].Fill(event_id, dNdeta)
         histograms['hist_mean_pt'].Fill(event_id, mean_pt)
 

@@ -42,12 +42,12 @@ pt_differential_flows:
   # https://www.hepdata.net/record/ins660793
   v2_SP_star:
     pt: [0., 6.]
-    centrality: [[0,5]]
+    centrality: [[30,40]]
     xtitle: '#it{p}_{T} (GeV/#it{c})'
     logy: False
 
     hepdata: 'HEPData-ins660793-v1-root.root'
-    hepdata_AA_dir: ['Figure 18_1', 'Figure 18_2']
+    hepdata_AA_dir: ['Figure 18_5', 'Figure 18_2']
     hepdata_AA_gname: 'Graph1D_y2'
     hepdata_AA_hname: 'Hist1D_y2'
     ytitle_AA: 'v_{2}'

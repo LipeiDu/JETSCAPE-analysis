@@ -325,8 +325,8 @@ class PlotResults(common_base.CommonBase):
                     Qn_ref_imag = hist_Qn_ref_imag[n].GetBinContent(event_id)
 
                     # Pack complex Qn_pT and Qn_ref data
-                    QnpT_diff_event.append(N_Qn_pT * (Qn_pT_real_n + 1j * Qn_pT_imag_n))
-                    Qnref_event.append(N_Qn_ref * (Qn_ref_real + 1j * Qn_ref_imag))
+                    QnpT_diff_event.append((Qn_pT_real_n + 1j * Qn_pT_imag_n))
+                    Qnref_event.append((Qn_ref_real + 1j * Qn_ref_imag))
 
                 # Append formatted data for this event
                 QnpT_diff_array.append(QnpT_diff_event)
@@ -372,6 +372,21 @@ class PlotResults(common_base.CommonBase):
     #-------------------------------------------------------------------------------------------
     # Functions for flow calculations
     #-------------------------------------------------------------------------------------------
+    def calculate_vn_2(vn_data_array):
+        """
+            this function computes vn{2} and its stat. err.
+            self correlation is substracted
+        """
+        vn_data_array = np.array(vn_data_array)
+        nev = len(vn_data_array[:, 0])
+        dN = np.real(vn_data_array[:, 0])
+        dN = dN.reshape(len(dN), 1)
+        Qn_array = dN*vn_data_array[:, 1:]
+        corr = 1./(dN*(dN - 1.))*(Qn_array*np.conj(Qn_array) - dN)
+        vn_2 = np.sqrt(np.real(np.mean(corr, 0))) + 1e-30
+        vn_2_err = np.std(np.real(corr), 0)/np.sqrt(nev)/2./vn_2
+        return(np.nan_to_num(vn_2), np.nan_to_num(vn_2_err))
+
     def calculate_vn_diff_SP(self, QnpT_diff, Qnref):
         """
             this funciton calculates the scalar-product vn
