@@ -1,0 +1,69 @@
+sqrt_s: 200
+
+# Common parameters
+debug_level: 0
+
+# Generation
+xml_user_file: '/home/jetscape-user/JETSCAPE/config/jetscape_user_AA_2011.01430.xml'
+xml_master_file: '/home/jetscape-user/JETSCAPE/config/jetscape_main.xml'
+
+# Analysis parameters -- required
+n_event_max: 1000
+reader: ascii
+progress_bar: True
+merge_histograms: True
+write_Qn_vector_histograms: True
+
+# Analysis parameters -- user-defined
+eta_min: -0.5
+eta_max: 0.5
+
+eta_min_ref: -0.5
+eta_max_ref: 1.0
+
+# pT range for flow analysis
+pT_low: 0.05
+pT_high: 5.8
+npT: 50
+
+# these parameters are used in Qn vector writer; they have to be consistent
+n_pt_bins: 30
+pt_min: 0.
+pt_max: 6.
+n_y_bins: 80
+y_min: -4
+y_max: 4
+n_order: 7 # the maximum n is n_order-1
+n_oversample: 20 # number of oversamples in each event
+
+selected_pid: [9999]
+
+pt_differential_flows:
+  # https://www.hepdata.net/record/ins660793
+  v2_SP_star:
+    pt: [0., 6.]
+    centrality: [[0,5]]
+    xtitle: '#it{p}_{T} (GeV/#it{c})'
+    logy: False
+
+    hepdata: 'HEPData-ins660793-v1-root.root'
+    hepdata_AA_dir: ['Figure 18_1', 'Figure 18_2']
+    hepdata_AA_gname: 'Graph1D_y2'
+    hepdata_AA_hname: 'Hist1D_y2'
+    ytitle_AA: 'v_{2}'
+    y_min_AA: 0.
+    y_max_AA: 1.9
+
+  v2_four_cumulant_star:
+    pt: [0., 6.]
+    centrality: [[0,5]]
+    xtitle: '#it{p}_{T} (GeV/#it{c})'
+    logy: False
+
+    hepdata: 'HEPData-ins660793-v1-root.root'
+    hepdata_AA_dir: ['Figure 18_1', 'Figure 18_2']
+    hepdata_AA_gname: 'Graph1D_y2'
+    hepdata_AA_hname: 'Hist1D_y2'
+    ytitle_AA: 'v_{2}'
+    y_min_AA: 0.
+    y_max_AA: 1.9

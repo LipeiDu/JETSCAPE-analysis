@@ -55,6 +55,9 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         self.eta_min = config['eta_min']
         self.eta_max = config['eta_max']
 
+        self.eta_min_ref = config['eta_min_ref']
+        self.eta_max_ref = config['eta_max_ref']
+
         self.pT_low = config['pT_low']
         self.pT_high = config['pT_high']
         self.npT = config['npT']
@@ -204,6 +207,12 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         vncos_values = {n: [] for n in range(1, self.n_order)}
         vnsin_values = {n: [] for n in range(1, self.n_order)}
 
+        # Reference lists in pT for a different rapidity range
+        pt_ref_values = []
+        dN_ref_values = []
+        vncos_ref_values = {n: [] for n in range(1, self.n_order)}
+        vnsin_ref_values = {n: [] for n in range(1, self.n_order)}
+
         # Loop over pT bins
         for bin_x in range(1, self.hist_dN.GetNbinsX() + 1):
             pt = self.hist_dN.GetXaxis().GetBinCenter(bin_x)
@@ -214,11 +223,16 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
             vncos_sum = {n: 0.0 for n in range(1, self.n_order)}
             vnsin_sum = {n: 0.0 for n in range(1, self.n_order)}
 
+            # Initialize summation for reference rapidity range
+            dN_ref_sum = 0.0
+            vncos_ref_sum = {n: 0.0 for n in range(1, self.n_order)}
+            vnsin_ref_sum = {n: 0.0 for n in range(1, self.n_order)}
+
             # Loop over rapidity bins
             for bin_y in range(1, self.hist_dN.GetNbinsY() + 1):
                 y = self.hist_dN.GetYaxis().GetBinCenter(bin_y)
 
-                # Check if rapidity is within the specified range
+                # Check if rapidity is within the specified range for particles of interest
                 if self.eta_min <= y <= self.eta_max:
                     dN = self.hist_dN.GetBinContent(bin_x, bin_y)
                     dNdpTdy = self.hist_dNdpTdy.GetBinContent(bin_x, bin_y)  # Get dNdpTdy value
@@ -234,6 +248,20 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                         vncos_sum[n] += vncos * dN  # Weighted by dN
                         vnsin_sum[n] += vnsin * dN  # Weighted by dN
 
+                # Check if rapidity is within the range for reference particles
+                if self.eta_min_ref <= y <= self.eta_max_ref:
+                    dN_ref = self.hist_dN.GetBinContent(bin_x, bin_y)
+
+                    # Sum dN for the reference range
+                    dN_ref_sum += dN_ref
+
+                    # Sum vncos and vnsin for each harmonic n, weighted by dN for the reference particles
+                    for n in range(1, self.n_order):
+                        vncos_ref = self.hist_vncos[n].GetBinContent(bin_x, bin_y)
+                        vnsin_ref = self.hist_vnsin[n].GetBinContent(bin_x, bin_y)
+                        vncos_ref_sum[n] += vncos_ref * dN_ref  # Weighted by dN_ref
+                        vnsin_ref_sum[n] += vnsin_ref * dN_ref  # Weighted by dN_ref
+
             # Append the summed values for this pT bin if dN_sum > 0
             if dN_sum > 0:
                 pt_values.append(pt)
@@ -245,6 +273,16 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                     vncos_values[n].append(vncos_sum[n] / dN_sum if dN_sum > 0 else 0.0)
                     vnsin_values[n].append(vnsin_sum[n] / dN_sum if dN_sum > 0 else 0.0)
 
+            # Append the reference values for this pT bin if dN_ref_sum > 0
+            if dN_ref_sum > 0:
+                pt_ref_values.append(pt)
+                dN_ref_values.append(dN_ref_sum)
+
+                # Normalize vncos_ref_sum and vnsin_ref_sum by dN_ref_sum for each harmonic n
+                for n in range(1, self.n_order):
+                    vncos_ref_values[n].append(vncos_ref_sum[n] / dN_ref_sum if dN_ref_sum > 0 else 0.0)
+                    vnsin_ref_values[n].append(vnsin_ref_sum[n] / dN_ref_sum if dN_ref_sum > 0 else 0.0)
+
         # Convert lists to arrays for further processing
         pt_values = np.array(pt_values)
         dN_values = np.array(dN_values)
@@ -253,6 +291,13 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         for n in range(1, self.n_order):
             vncos_values[n] = np.array(vncos_values[n])
             vnsin_values[n] = np.array(vnsin_values[n])
+
+        pt_ref_values = np.array(pt_ref_values)
+        dN_ref_values = np.array(dN_ref_values)
+
+        for n in range(1, self.n_order):
+            vncos_ref_values[n] = np.array(vncos_ref_values[n])
+            vnsin_ref_values[n] = np.array(vnsin_ref_values[n])
 
         # II. Calculate mean pT and yield of a single event
 
@@ -290,14 +335,14 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         npT, pT_low, pT_high = self.npT, self.pT_low, self.pT_high
         pT_inte_array = np.linspace(pT_low, pT_high, npT)
 
-        # integrated vn
+        # i. integrated vn
         vn_real_array = {} 
         vn_imag_array = {}
         N_vn = {}
         
         N_vn, vn_real_array, vn_imag_array = self.calculate_inte_vn_single_event(pT_inte_array, pt_values, dNdpTdy_values, dN_values, vncos_values, vnsin_values)
 
-        # pT-differential vn
+        # ii. pT-differential vn
         Qn_pT_real_array = {} 
         Qn_pT_imag_array = {}
         N_Qn_pT = {}
@@ -305,9 +350,6 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         Qn_ref_real_array = {} 
         Qn_ref_imag_array = {}
         N_Qn_ref = {}
-
-        # here we use all particles within the kinematic ranges as reference particles
-        pt_ref_values, dN_ref_values, vncos_ref_values, vnsin_ref_values = pt_values, dN_values, vncos_values, vnsin_values
 
         N_Qn_pT, Qn_pT_real_array, Qn_pT_imag_array, N_Qn_ref, Qn_ref_real_array, Qn_ref_imag_array = self.calculate_diff_vn_single_event(pT_inte_array, pt_values, dN_values, vncos_values, vnsin_values, 
             pt_ref_values, dN_ref_values, vncos_ref_values, vnsin_ref_values)
@@ -319,7 +361,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # ---------------------------------------------------------------
     def calculate_inte_vn_single_event(self, pT_inte_array, pt_values, dNdpTdy_values, dN_values, vncos_values, vnsin_values):
         """
-        This function calculates the pT-integrated vn in a given pT range (pT_low, pT_high)
+        This function calculates the pT-integrated vn (vn{2} and vn{4}) in a given pT range (pT_low, pT_high)
         using the processed data from process_histogram.
         """
         
@@ -348,7 +390,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
     def calculate_diff_vn_single_event(self, pT_inte_array, pt_values, dN_values, vncos_values, vnsin_values, pt_ref_values, dN_ref_values, vncos_ref_values, vnsin_ref_values):
         """
-        This function computes pT-differential vn{4} for a single event using processed data and reference data.
+        This function computes pT-differential vn{4} and vn{SP} for a single event using processed data and reference data.
         """
         dpT = pT_inte_array[1] - pT_inte_array[0]
 

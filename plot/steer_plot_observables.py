@@ -62,7 +62,8 @@ def main():
 
     # Specify input directory containing final_state_hadrons files
     sqrts = 5020
-    final_state_hadron_dir = '/home/jetscape-user/JETSCAPE-STAT-output'
+    # final_state_hadron_dir = '/home/jetscape-user/JETSCAPE-STAT-output/Run0999'
+    final_state_hadron_dir = '/home/jetscape-user/JETSCAPE-STAT-output/Run0099_OSC'
     final_state_hadron_files = [file for file in os.listdir(final_state_hadron_dir) if 'jetscape' in file]
     system = final_state_hadron_files[0].split('_')[1]
 
@@ -73,7 +74,7 @@ def main():
     #       and only the merging/plotting step is needed to be run locally
     construct_observables = False
     construct_histograms = False
-    merge_histograms = False
+    merge_histograms = True
     plot_histograms = True
 
     #-----------------------------------------------------------------

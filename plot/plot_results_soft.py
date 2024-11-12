@@ -218,7 +218,7 @@ class PlotResults(common_base.CommonBase):
         #for v2
         if 'v2' in observable:
             self.y_min = -0.05
-            self.y_max = 0.3
+            self.y_max = 2.3
             self.y_ratio_min = -0.5
             self.y_ratio_max = 1.99
 
@@ -266,7 +266,7 @@ class PlotResults(common_base.CommonBase):
     #-------------------------------------------------------------------------------------------
     def get_histogram(self, observable_type, observable, centrality, method='', collection_label='', pt_suffix=''):
         # Check if we're dealing with the pt_differential_flows v2_alice case
-        if observable_type == "pt_differential_flows" and observable == "v2_alice":
+        if observable_type == "pt_differential_flows" and 'v2' in observable:
             # Initialize dictionaries to store the histograms
             self.observable_settings['hist_N_Qn_pT'] = self.input_file.Get("hist_N_Qn_pT")
             self.observable_settings['hist_N_Qn_ref'] = self.input_file.Get("hist_N_Qn_ref")
@@ -298,7 +298,7 @@ class PlotResults(common_base.CommonBase):
     #-------------------------------------------------------------------------------------------
     def post_process_histogram(self, observable_type, observable, block, centrality, centrality_index, method='', collection_label=''):
         # Check if we're dealing with the pt_differential_flows v2_alice case
-        if observable_type == "pt_differential_flows" and observable == "v2_alice":
+        if observable_type == "pt_differential_flows" and 'v2' in observable:
             hist_N_Qn_pT = self.observable_settings['hist_N_Qn_pT']
             hist_N_Qn_ref = self.observable_settings['hist_N_Qn_ref']
             hist_Qn_pT_real = self.observable_settings['hist_Qn_pT_real']
@@ -332,18 +332,35 @@ class PlotResults(common_base.CommonBase):
                 QnpT_diff_array.append(QnpT_diff_event)
                 Qnref_array.append(Qnref_event)
 
-            # Calculate vn_diff_SP and store the processed data
-            vn_diff_SP = self.calculate_vn_diff_SP(QnpT_diff_array, Qnref_array)
+            if "SP" in observable:
+                # I. Scalar product
+                # Calculate vn_diff_SP and store the processed data
+                vn_diff_SP = self.calculate_vn_diff_SP(QnpT_diff_array, Qnref_array)
 
-            # Include pT bins in vn_diff_SP for plotting
-            vn_diff_SP_formatted = {
-                'pT_bins': self.pt_array,  # Using self.pt_array defined in the constructor
-                'vn_values': vn_diff_SP[0],
-                'vn_errors': vn_diff_SP[1]
-            }
+                # Include pT bins in vn_diff_SP for plotting
+                vn_diff_SP_formatted = {
+                    'pT_bins': self.pt_array,  # Using self.pt_array defined in the constructor
+                    'vn_values': vn_diff_SP[0],
+                    'vn_errors': vn_diff_SP[1]
+                }
 
-            # Store in observable_settings for further use
-            self.observable_settings['vn_diff_SP'] = vn_diff_SP_formatted
+                # Store in observable_settings for further use
+                self.observable_settings['vn_diff_SP'] = vn_diff_SP_formatted
+
+            if "cumulant" in observable:
+                # II. four-particle cumulants
+                # Calculate vn4_diff and store the processed data
+                vn4_diff = self.calculate_vn4_diff(QnpT_diff_array, Qnref_array)
+
+                # Include pT bins in vn4_diff for plotting, using the same format
+                vn4_diff_formatted = {
+                    'pT_bins': self.pt_array,  # Using self.pt_array defined in the constructor
+                    'vn_values': vn4_diff[0],  # vn_values for the different harmonic orders
+                    'vn_errors': vn4_diff[1]   # vn_errors for the different harmonic orders
+                }
+
+                # Store in observable_settings for further use
+                self.observable_settings['vn4_diff'] = vn4_diff_formatted
 
         else:
             # Handle other cases as before
@@ -352,7 +369,9 @@ class PlotResults(common_base.CommonBase):
                 # (existing processing code here)
                 pass
 
-
+    #-------------------------------------------------------------------------------------------
+    # Functions for flow calculations
+    #-------------------------------------------------------------------------------------------
     def calculate_vn_diff_SP(self, QnpT_diff, Qnref):
         """
             this funciton calculates the scalar-product vn
@@ -397,6 +416,91 @@ class PlotResults(common_base.CommonBase):
             
             vn_values.append(vnSPpT_mean)
             vn_errors.append(vnSPpT_err)
+
+        return [vn_values, vn_errors]
+
+    def calculate_vn4_diff(self, QnpT_diff, Qnref):
+        """
+            This function calculates the 4-particle vn(pT) using the scalar-product method.
+            Assumption: No overlap between particles of interest and reference flow Qn vectors.
+            Inputs:
+                - QnpT_diff: Shape [nev, norder, npT]
+                - Qnref: Shape [nev, norder]
+            Returns:
+                - vn_values: List of mean vn values for different harmonic orders (one array per harmonic order)
+                - vn_errors: List of vn errors for different harmonic orders (one array per harmonic order)
+        """
+        QnpT_diff = np.array(QnpT_diff)
+        Qnref = np.array(Qnref)
+        nev, norder, npT = QnpT_diff.shape
+
+        vn_values = []
+        vn_errors = []
+
+        for iorder in range(1, 4):  # Process for orders 1 to 3
+            # compute Cn^ref{4}
+            Nref = np.real(Qnref[:, 0])
+            QnRef_tmp = Qnref[:, iorder]
+            Q2nRef_tmp = Qnref[:, 2 * iorder]
+            N4refPairs = Nref * (Nref - 1.) * (Nref - 2.) * (Nref - 3.)
+            n4ref = (np.abs(QnRef_tmp)**4.
+                     - 2. * np.real(Q2nRef_tmp * np.conj(QnRef_tmp) * np.conj(QnRef_tmp))
+                     - 4. * (Nref - 2) * np.abs(QnRef_tmp)**2. + np.abs(Q2nRef_tmp)**2.
+                     + 2. * Nref * (Nref - 3))
+            N2refPairs = Nref * (Nref - 1.)
+            n2ref = np.abs(QnRef_tmp)**2. - Nref
+
+            # compute dn{4}(pT)
+            NpTPOI = np.real(QnpT_diff[:, 0, :])
+            QnpT_tmp = QnpT_diff[:, iorder, :]
+            Nref = Nref.reshape(len(Nref), 1)
+            QnRef_tmp = QnRef_tmp.reshape(len(QnRef_tmp), 1)
+            Q2nRef_tmp = Q2nRef_tmp.reshape(len(Q2nRef_tmp), 1)
+            N4POIPairs = NpTPOI * (Nref - 1.) * (Nref - 2.) * (Nref - 3.) + 1e-30
+            n4pT = np.real(QnpT_tmp * QnRef_tmp * np.conj(QnRef_tmp) * np.conj(QnRef_tmp)
+                           - 2. * (Nref - 1) * QnpT_tmp * np.conj(QnRef_tmp)
+                           - QnpT_tmp * QnRef_tmp * np.conj(Q2nRef_tmp))
+            N2POIPairs = NpTPOI * Nref + 1e-30
+            n2pT = np.real(QnpT_tmp * np.conj(QnRef_tmp))
+
+            # Calculate observables with Jackknife resampling
+            Cn2ref_arr = np.zeros(nev)
+            Cn4ref_arr = np.zeros(nev)
+            dn4pT_arr = np.zeros(npT)
+            vn4pT4_arr = np.zeros([nev, npT])
+            
+            for iev in range(nev):
+                array_idx = [True] * nev
+                array_idx[iev] = False
+                array_idx = np.array(array_idx)
+
+                Cn2ref_arr[iev] = (
+                    np.mean(n2ref[array_idx]) / np.mean(N2refPairs[array_idx])
+                )
+                Cn4ref_arr[iev] = (
+                    np.mean(n4ref[array_idx]) / np.mean(N4refPairs[array_idx])
+                    - 2. * (Cn2ref_arr[iev])**2.
+                )
+
+                dn4pT_arr = (
+                    np.mean(n4pT[array_idx, :], 0) / np.mean(N4POIPairs[array_idx, :], 0)
+                    - 2. * np.mean(n2pT[array_idx, :], 0) / np.mean(N2POIPairs[array_idx, :], 0) * Cn2ref_arr[iev]
+                )
+
+                vn4pT4_arr[iev, :] = (-dn4pT_arr)**4. / ((-Cn4ref_arr[iev])**3.)
+
+            vn4pT4_mean = np.mean(vn4pT4_arr, axis=0)
+            vn4pT4_err = np.sqrt((nev - 1.) / nev * np.sum((vn4pT4_arr - vn4pT4_mean)**2., axis=0))
+
+            vn4pT = np.zeros(npT)
+            vn4pT_err = np.zeros(npT)
+            idx = vn4pT4_mean > 0
+            vn4pT[idx] = vn4pT4_mean[idx]**(0.25)
+            vn4pT_err[idx] = vn4pT4_err[idx] / (4. * vn4pT4_mean[idx]**(0.75))
+
+            # Append calculated values and errors for this harmonic order
+            vn_values.append(vn4pT)
+            vn_errors.append(vn4pT_err)
 
         return [vn_values, vn_errors]
 
@@ -476,7 +580,7 @@ class PlotResults(common_base.CommonBase):
             return
 
         # Create a canvas for the plot
-        c = ROOT.TCanvas('c', 'c', 600, 650)
+        c = ROOT.TCanvas('c', 'c', 1000, 950)
         c.Draw()
         c.cd()
 
@@ -542,12 +646,38 @@ class PlotResults(common_base.CommonBase):
             # Create a TGraphErrors for the model results
             model_graph = ROOT.TGraphErrors(len(pT_bins_model))
             for i, (pT, vn, vn_err) in enumerate(zip(pT_bins_model, vn_values, vn_errors)):
-                model_graph.SetPoint(i, pT, vn)
-                model_graph.SetPointError(i, 0, vn_err)
+                if vn > 1.e-10 and vn is not None:  
+                    model_graph.SetPoint(i, pT, vn)
+                    model_graph.SetPointError(i, 0, vn_err)
 
             model_graph.SetMarkerSize(self.marker_size)
             model_graph.SetMarkerStyle(self.data_marker + 1)
-            # model_graph.SetMarkerColor(self.model_color)
+            model_graph.SetMarkerColor(ROOT.kRed)
+            model_graph.SetLineStyle(self.line_style)
+            model_graph.SetLineWidth(self.line_width)
+            # model_graph.SetLineColor(self.model_color)
+            model_graph.Draw('PE Z same')
+
+                # Plot the model results
+        if 'vn4_diff' in self.observable_settings:
+            vn4_diff = self.observable_settings['vn4_diff']
+            pT_bins_model = vn4_diff['pT_bins']
+
+            # Since vn_values and vn_errors are lists of arrays for each harmonic order,
+            # we select the values and errors for n=2
+            vn_values = vn4_diff['vn_values'][1]
+            vn_errors = vn4_diff['vn_errors'][1]
+
+            # Create a TGraphErrors for the model results
+            model_graph = ROOT.TGraphErrors(len(pT_bins_model))
+            for i, (pT, vn, vn_err) in enumerate(zip(pT_bins_model, vn_values, vn_errors)):
+                if vn > 1.e-10 and vn is not None:  
+                    model_graph.SetPoint(i, pT, vn)
+                    model_graph.SetPointError(i, 0, vn_err)
+
+            model_graph.SetMarkerSize(self.marker_size)
+            model_graph.SetMarkerStyle(self.data_marker + 1)
+            model_graph.SetMarkerColor(ROOT.kRed)
             model_graph.SetLineStyle(self.line_style)
             model_graph.SetLineWidth(self.line_width)
             # model_graph.SetLineColor(self.model_color)
