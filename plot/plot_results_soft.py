@@ -231,6 +231,9 @@ class PlotResults(common_base.CommonBase):
         if 'multiplicity' in observable:
             self.y_max = 500
 
+        if 'vn' in observable:
+            self.y_max = 0.2
+
         if 'skip_pp' in block:
             self.skip_pp = block['skip_pp']
         else:
@@ -275,8 +278,18 @@ class PlotResults(common_base.CommonBase):
     #-------------------------------------------------------------------------------------------
     def get_histogram(self, observable_type, observable, centrality, method='', collection_label='', pt_suffix=''):
 
-        if observable_type == "soft_integrated" and 'multiplicity' in observable:
-            self.observable_settings['hist_dNchdeta'] = self.input_file.Get("hist_dNchdeta")
+        if observable_type == "soft_integrated":
+            if 'multiplicity' in observable:
+                self.observable_settings['hist_dNchdeta'] = self.input_file.Get("hist_dNchdeta")
+            if 'vn' in observable:
+                self.observable_settings['hist_N_vn'] = self.input_file.Get("hist_N_vn")
+
+                self.observable_settings['hist_vn_real'] = {}
+                self.observable_settings['hist_vn_imag'] = {}
+
+                for n in range(1, self.n_order):
+                    self.observable_settings['hist_vn_real'][n] = self.input_file.Get(f"hist_vn_real_n{n}")
+                    self.observable_settings['hist_vn_imag'][n] = self.input_file.Get(f"hist_vn_imag_n{n}")
 
         elif observable_type == "pt_differential_flows" and 'v2' in observable:
             # Initialize dictionaries to store the histograms
@@ -309,22 +322,58 @@ class PlotResults(common_base.CommonBase):
     # Perform any additional manipulations on scaled histograms
     #-------------------------------------------------------------------------------------------
     def post_process_histogram(self, observable_type, observable, block, centrality, centrality_index, method='', collection_label=''):
-        if observable_type == "soft_integrated" and 'multiplicity' in observable:
+        if observable_type == "soft_integrated":
+            if 'multiplicity' in observable:
 
-            hist_dNchdeta = self.observable_settings['hist_dNchdeta']
+                hist_dNchdeta = self.observable_settings['hist_dNchdeta']
 
-            n_events = hist_dNchdeta.GetNbinsX()
-            tot_dNchdeta = 0.
+                n_events = hist_dNchdeta.GetNbinsX()
+                tot_dNchdeta = 0.
 
-            # Loop over event IDs to process the data
-            for event_id in range(1,  n_events+ 1):
+                # Loop over event IDs to process the data
+                for event_id in range(1,  n_events+ 1):
 
-                dNchdeta = hist_dNchdeta.GetBinContent(event_id)
-                tot_dNchdeta += dNchdeta
+                    dNchdeta = hist_dNchdeta.GetBinContent(event_id)
+                    tot_dNchdeta += dNchdeta
 
-            mean_dNchdeta = tot_dNchdeta / n_events if n_events > 0 else 0
+                mean_dNchdeta = tot_dNchdeta / n_events if n_events > 0 else 0
 
-            self.observable_settings['dNchdeta'] = mean_dNchdeta
+                self.observable_settings['dNchdeta'] = mean_dNchdeta
+
+            elif 'vn' in observable:
+                # Retrieve the necessary histograms
+                hist_N_vn = self.observable_settings['hist_N_vn']
+                hist_vn_real = self.observable_settings['hist_vn_real']
+                hist_vn_imag = self.observable_settings['hist_vn_imag']
+
+                # Initialize lists to hold vn data for each event
+                vn_data_array = []
+
+                # Loop over event IDs to gather data
+                for event_id in range(1, hist_N_vn.GetNbinsX() + 1):
+                    # Collect multiplicity (N) for this event
+                    N_event = hist_N_vn.GetBinContent(event_id)
+                    temp_vn_array = [N_event]  # Start with N as the first element
+
+                    # For each harmonic order, get real and imaginary parts and pack them
+                    for n in range(1, self.n_order):
+                        vn_real_event = hist_vn_real[n].GetBinContent(event_id)
+                        vn_imag_event = hist_vn_imag[n].GetBinContent(event_id)
+                        
+                        # Create complex vn for this harmonic order
+                        vn_inte = vn_real_event + 1j * vn_imag_event
+                        temp_vn_array.append(vn_inte)
+
+                    # Append this event's data to vn_data_array
+                    vn_data_array.append(temp_vn_array)
+
+                if "vn2" in observable:
+                    vn2 = self.calculate_vn2(vn_data_array)
+                    self.observable_settings['vn2'] = vn2
+
+                if "vn4" in observable:
+                    vn4 = self.calculate_vn4(vn_data_array)
+                    self.observable_settings['vn4'] = vn4
 
         elif observable_type == "pt_differential_flows" and 'v2' in observable:
             hist_N_Qn_pT = self.observable_settings['hist_N_Qn_pT']
@@ -400,7 +449,7 @@ class PlotResults(common_base.CommonBase):
     #-------------------------------------------------------------------------------------------
     # Functions for flow calculations
     #-------------------------------------------------------------------------------------------
-    def calculate_vn_2(vn_data_array):
+    def calculate_vn2(self, vn_data_array):
         """
             this function computes vn{2} and its stat. err.
             self correlation is substracted
@@ -413,7 +462,99 @@ class PlotResults(common_base.CommonBase):
         corr = 1./(dN*(dN - 1.))*(Qn_array*np.conj(Qn_array) - dN)
         vn_2 = np.sqrt(np.real(np.mean(corr, 0))) + 1e-30
         vn_2_err = np.std(np.real(corr), 0)/np.sqrt(nev)/2./vn_2
-        return(np.nan_to_num(vn_2), np.nan_to_num(vn_2_err))
+        return (np.nan_to_num(vn_2), np.nan_to_num(vn_2_err))
+
+    def calculate_vn4(self, vn_data_array):
+        """
+        This function computes the 4-particle cumulant vn{4}
+        vn{4} = (2 <v_n*conj(v_n)>**2 - <(v_n*conj(v_n))**2.>)**(1/4)
+        """
+        vn_data_array = np.array(vn_data_array)
+        nev = len(vn_data_array[:, 0])
+        dN = np.real(vn_data_array[:, 0])
+        dN = dN + 1.e-30
+
+        Q1 = dN * vn_data_array[:, 1]
+        Q2 = dN * vn_data_array[:, 2]
+        Q3 = dN * vn_data_array[:, 3]
+        Q4 = dN * vn_data_array[:, 4]
+        Q5 = dN * vn_data_array[:, 5]
+        Q6 = dN * vn_data_array[:, 6]
+
+        # Two-particle correlation
+        N2_weight = dN * (dN - 1.0)
+        Q1_2 = np.abs(Q1) ** 2 - dN
+        Q2_2 = np.abs(Q2) ** 2 - dN
+        Q3_2 = np.abs(Q3) ** 2 - dN
+
+        # Four-particle correlation
+        N4_weight = dN * (dN - 1.0) * (dN - 2.0) * (dN - 3.0) + 1.e-30
+        Q1_4 = (np.abs(Q1) ** 4
+                - 2.0 * np.real(Q2 * np.conj(Q1) * np.conj(Q1))
+                - 4.0 * (dN - 2.0) * np.abs(Q1) ** 2
+                + np.abs(Q2) ** 2
+                + 2.0 * dN * (dN - 3.0))
+
+        Q2_4 = (np.abs(Q2) ** 4
+                - 2.0 * np.real(Q4 * np.conj(Q2) * np.conj(Q2))
+                - 4.0 * (dN - 2.0) * np.abs(Q2) ** 2
+                + np.abs(Q4) ** 2
+                + 2.0 * dN * (dN - 3.0))
+
+        Q3_4 = (np.abs(Q3) ** 4
+                - 2.0 * np.real(Q6 * np.conj(Q3) * np.conj(Q3))
+                - 4.0 * (dN - 2.0) * np.abs(Q3) ** 2
+                + np.abs(Q6) ** 2
+                + 2.0 * dN * (dN - 3.0))
+
+        # Calculate observables with Jackknife resampling method
+        C1_4_array = np.zeros(nev)
+        C2_4_array = np.zeros(nev)
+        C3_4_array = np.zeros(nev)
+        for iev in range(nev):
+            array_idx = np.ones(nev, dtype=bool)
+            array_idx[iev] = False
+
+            # C_1{4}
+            C1_4_array[iev] = (np.mean(Q1_4[array_idx]) / np.mean(N4_weight[array_idx])
+                               - 2.0 * (np.mean(Q1_2[array_idx]) / np.mean(N2_weight[array_idx])) ** 2)
+            # C_2{4}
+            C2_4_array[iev] = (np.mean(Q2_4[array_idx]) / np.mean(N4_weight[array_idx])
+                               - 2.0 * (np.mean(Q2_2[array_idx]) / np.mean(N2_weight[array_idx])) ** 2)
+            # C_3{4}
+            C3_4_array[iev] = (np.mean(Q3_4[array_idx]) / np.mean(N4_weight[array_idx])
+                               - 2.0 * (np.mean(Q3_2[array_idx]) / np.mean(N2_weight[array_idx])) ** 2)
+
+        C1_4_mean = np.mean(C1_4_array)
+        C1_4_err = np.sqrt((nev - 1.0) / nev * np.sum((C1_4_array - C1_4_mean) ** 2))
+        C2_4_mean = np.mean(C2_4_array)
+        C2_4_err = np.sqrt((nev - 1.0) / nev * np.sum((C2_4_array - C2_4_mean) ** 2))
+        C3_4_mean = np.mean(C3_4_array)
+        C3_4_err = np.sqrt((nev - 1.0) / nev * np.sum((C3_4_array - C3_4_mean) ** 2))
+
+        # Calculate vn{4} for each order and add small cutoff for security
+        v1_4, v1_4_err = 0.0, 0.0
+        if C1_4_mean < 0:
+            v1_4 = (-C1_4_mean) ** 0.25 + 1e-30
+            v1_4_err = 0.25 * (-C1_4_mean) ** -0.75 * C1_4_err
+
+        v2_4, v2_4_err = 0.0, 0.0
+        if C2_4_mean < 0:
+            v2_4 = (-C2_4_mean) ** 0.25 + 1e-30
+            v2_4_err = 0.25 * (-C2_4_mean) ** -0.75 * C2_4_err
+
+        v3_4, v3_4_err = 0.0, 0.0
+        if C3_4_mean < 0:
+            v3_4 = (-C3_4_mean) ** 0.25 + 1e-30
+            v3_4_err = 0.25 * (-C3_4_mean) ** -0.75 * C3_4_err
+
+        results = [
+            v1_4, v1_4_err, C1_4_mean, C1_4_err,
+            v2_4, v2_4_err, C2_4_mean, C2_4_err,
+            v3_4, v3_4_err, C3_4_mean, C3_4_err
+        ]
+
+        return results
 
     def calculate_vn_diff_SP(self, QnpT_diff, Qnref):
         """
@@ -554,7 +695,7 @@ class PlotResults(common_base.CommonBase):
 
         label = f'{observable_type}_{observable}{method}{self.suffix}_{centrality}{pt_suffix}'
 
-        if observable_type == "soft_integrated" and 'multiplicity' in observable:
+        if observable_type == "soft_integrated":
 
             self.plot_distribution_and_ratio(observable_type, observable, centrality, label, logy=logy)
 
@@ -731,19 +872,40 @@ class PlotResults(common_base.CommonBase):
             # model_graph.SetLineColor(self.model_color)
             model_graph.Draw('PE Z same')
 
-        # Plot the model results for multiplicity (dNch/deta)
-        if observable_type == "soft_integrated" and 'multiplicity' in observable:
-            dNchdeta = self.observable_settings['dNchdeta']
-            
-            # Calculate the centrality midpoint for the x-axis value
+        # Plot the model results based on observable type
+        if observable_type == "soft_integrated":
             centrality_midpoint = (centrality[0] + centrality[1]) / 2.0
-            centrality_width = (centrality[1] - centrality[0]) / 2.0  # Error bar on centrality
-            
-            # Create a TGraphErrors with the centrality midpoint and dNch/deta
+            centrality_width = (centrality[1] - centrality[0]) / 2.0  # x-error for centrality range
+
+            # Determine the y-value and y-error based on the observable
+            if 'multiplicity' in observable:
+                y_value = self.observable_settings['dNchdeta']
+                y_error = 0  # Assuming no y-error for multiplicity
+
+            elif 'vn2' in observable:
+                # Extract vn_2 and vn_2_err for n=2 from self.observable_settings['vn2']
+                vn2, vn2_err = self.observable_settings['vn2']
+                y_value = vn2[1]  # vn_2 for n=2 (index 1 in the returned array)
+                y_error = vn2_err[1]
+                print("vn2=", y_value)
+
+            elif 'vn4' in observable:
+                # Extract v2_4 and v2_4_err for n=2 from self.observable_settings['vn4']
+                vn4 = self.observable_settings['vn4']
+                y_value = vn4[4]   # v2_4 for n=2 (index 4 in the returned list)
+                y_error = vn4[5]   # v2_4_err for n=2 (index 5 in the returned list)
+
+                print("vn4=", y_value)
+
+            else:
+                print(f"WARNING: Observable {observable} not recognized for plotting.")
+                return
+
+            # Create TGraphErrors for the model results
             model_graph = ROOT.TGraphErrors(1)
-            model_graph.SetPoint(0, centrality_midpoint, dNchdeta)
-            model_graph.SetPointError(0, centrality_width, 0)  # x-error for centrality range, y-error assumed 0
-            
+            model_graph.SetPoint(0, centrality_midpoint, y_value)
+            model_graph.SetPointError(0, centrality_width, y_error)
+
             # Style the model graph for plotting
             model_graph.SetMarkerSize(self.marker_size)
             model_graph.SetMarkerStyle(self.data_marker + 1)
@@ -751,7 +913,6 @@ class PlotResults(common_base.CommonBase):
             model_graph.SetLineStyle(self.line_style)
             model_graph.SetLineWidth(self.line_width)
             model_graph.Draw('PE Z same')
-
 
         # Add legend
         legend = ROOT.TLegend(0.4, 0.75, 0.75, 0.85)

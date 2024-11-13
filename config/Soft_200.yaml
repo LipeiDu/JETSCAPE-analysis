@@ -49,6 +49,28 @@ soft_integrated:
 
     ytitle_AA: "multiplicity"
 
+  vn2_star:
+    centrality: [[30,40]]
+    xtitle: 'centrality'
+    logy: False
+
+    user_data: 'user_data.yaml'
+
+    ytitle_AA: "vn{2}"
+
+    y_max_AA: 0.2
+
+  vn4_star:
+    centrality: [[30,40]]
+    xtitle: 'centrality'
+    logy: False
+
+    user_data: 'user_data.yaml'
+
+    ytitle_AA: "vn{4}"
+    y_max_AA: 0.2
+
+
 pt_differential_flows:
   # https://www.hepdata.net/record/ins660793
   v2_SP_star:
