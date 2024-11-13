@@ -90,7 +90,9 @@ class PlotResults(common_base.CommonBase):
     #-------------------------------------------------------------------------------------------
     def plot_results(self):
 
-        self.plot_pt_differential_flows(observable_type='pt_differential_flows')
+        self.plot_soft_observable(observable_type='soft_integrated')
+
+        self.plot_soft_observable(observable_type='pt_differential_flows')
         
         # self.plot_event_qa()
 
@@ -103,14 +105,14 @@ class PlotResults(common_base.CommonBase):
     #-------------------------------------------------------------------------------------------
     # Plot hadron observables
     #-------------------------------------------------------------------------------------------
-    def plot_pt_differential_flows(self, observable_type=''):
+    def plot_soft_observable(self, observable_type=''):
         print()
         print(f'Plot {observable_type} observables...')
 
         for observable, block in self.config[observable_type].items():
             for centrality_index,centrality in enumerate(block['centrality']):
 
-                if 'hepdata' not in block and 'custom_data' not in block:
+                if 'hepdata' not in block and 'custom_data' not in block and 'user_data' not in block:
                     continue
 
                 # Initialize observable configuration
@@ -137,6 +139,8 @@ class PlotResults(common_base.CommonBase):
             self.observable_settings['data_distribution'] = self.plot_utils.tgraph_from_hepdata(block, self.is_AA, self.sqrts, observable_type, observable, centrality_index, suffix=self.suffix, pt_suffix=pt_suffix)
         elif 'custom_data' in block:
             self.observable_settings['data_distribution'] = self.plot_utils.tgraph_from_yaml(block, self.is_AA, self.sqrts, observable_type, observable, centrality_index, suffix=self.suffix, pt_suffix=pt_suffix)
+        elif 'user_data' in block:
+            self.observable_settings['data_distribution'] = self.plot_utils.tgraph_from_custom_yaml(block, self.sqrts, observable_type, observable, centrality_index = None)
         else:
             self.observable_settings['data_distribution'] = None
 
@@ -218,9 +222,14 @@ class PlotResults(common_base.CommonBase):
         #for v2
         if 'v2' in observable:
             self.y_min = -0.05
-            self.y_max = 2.3
+            self.y_max = 0.8
             self.y_ratio_min = -0.5
             self.y_ratio_max = 1.99
+
+
+        # for multiplicity
+        if 'multiplicity' in observable:
+            self.y_max = 500
 
         if 'skip_pp' in block:
             self.skip_pp = block['skip_pp']
@@ -265,8 +274,11 @@ class PlotResults(common_base.CommonBase):
     #  - In the case of semi-inclusive measurements construct difference of histograms
     #-------------------------------------------------------------------------------------------
     def get_histogram(self, observable_type, observable, centrality, method='', collection_label='', pt_suffix=''):
-        # Check if we're dealing with the pt_differential_flows v2_alice case
-        if observable_type == "pt_differential_flows" and 'v2' in observable:
+
+        if observable_type == "soft_integrated" and 'multiplicity' in observable:
+            self.observable_settings['hist_dNchdeta'] = self.input_file.Get("hist_dNchdeta")
+
+        elif observable_type == "pt_differential_flows" and 'v2' in observable:
             # Initialize dictionaries to store the histograms
             self.observable_settings['hist_N_Qn_pT'] = self.input_file.Get("hist_N_Qn_pT")
             self.observable_settings['hist_N_Qn_ref'] = self.input_file.Get("hist_N_Qn_ref")
@@ -297,8 +309,24 @@ class PlotResults(common_base.CommonBase):
     # Perform any additional manipulations on scaled histograms
     #-------------------------------------------------------------------------------------------
     def post_process_histogram(self, observable_type, observable, block, centrality, centrality_index, method='', collection_label=''):
-        # Check if we're dealing with the pt_differential_flows v2_alice case
-        if observable_type == "pt_differential_flows" and 'v2' in observable:
+        if observable_type == "soft_integrated" and 'multiplicity' in observable:
+
+            hist_dNchdeta = self.observable_settings['hist_dNchdeta']
+
+            n_events = hist_dNchdeta.GetNbinsX()
+            tot_dNchdeta = 0.
+
+            # Loop over event IDs to process the data
+            for event_id in range(1,  n_events+ 1):
+
+                dNchdeta = hist_dNchdeta.GetBinContent(event_id)
+                tot_dNchdeta += dNchdeta
+
+            mean_dNchdeta = tot_dNchdeta / n_events if n_events > 0 else 0
+
+            self.observable_settings['dNchdeta'] = mean_dNchdeta
+
+        elif observable_type == "pt_differential_flows" and 'v2' in observable:
             hist_N_Qn_pT = self.observable_settings['hist_N_Qn_pT']
             hist_N_Qn_ref = self.observable_settings['hist_N_Qn_ref']
             hist_Qn_pT_real = self.observable_settings['hist_Qn_pT_real']
@@ -526,7 +554,11 @@ class PlotResults(common_base.CommonBase):
 
         label = f'{observable_type}_{observable}{method}{self.suffix}_{centrality}{pt_suffix}'
 
-        if observable_type in ['pt_differential_flows'] and 'v2' in observable:
+        if observable_type == "soft_integrated" and 'multiplicity' in observable:
+
+            self.plot_distribution_and_ratio(observable_type, observable, centrality, label, logy=logy)
+
+        elif observable_type in ['pt_differential_flows'] and 'v2' in observable:
             self.plot_distribution_and_ratio(observable_type, observable, centrality, label)
 
         # # If AA: Plot PbPb/pp ratio, and comparison to data
@@ -615,10 +647,11 @@ class PlotResults(common_base.CommonBase):
         if isinstance(self.observable_settings['data_distribution'], ROOT.TGraph):
             graph = self.observable_settings['data_distribution']
             n_points = graph.GetN()
-            x_values = [graph.GetX()[i] for i in range(n_points)]
+            x_values = sorted([graph.GetX()[i] for i in range(n_points)])  # Sort x_values in ascending order
 
             # Construct bin edges for the experimental data
-            self.bins = np.array(x_values + [x_values[-1] + (x_values[-1] - x_values[-2])])
+            bin_width = x_values[-1] - x_values[-2] if len(x_values) > 1 else 1  # Set a default bin width if only one point exists
+            self.bins = np.array(x_values + [x_values[-1] + bin_width])  # Add an extra bin edge based on the last width
         else:
             # If it's a histogram, use the original method
             self.bins = np.array(self.observable_settings['data_distribution'].GetXaxis().GetXbins())
@@ -697,6 +730,28 @@ class PlotResults(common_base.CommonBase):
             model_graph.SetLineWidth(self.line_width)
             # model_graph.SetLineColor(self.model_color)
             model_graph.Draw('PE Z same')
+
+        # Plot the model results for multiplicity (dNch/deta)
+        if observable_type == "soft_integrated" and 'multiplicity' in observable:
+            dNchdeta = self.observable_settings['dNchdeta']
+            
+            # Calculate the centrality midpoint for the x-axis value
+            centrality_midpoint = (centrality[0] + centrality[1]) / 2.0
+            centrality_width = (centrality[1] - centrality[0]) / 2.0  # Error bar on centrality
+            
+            # Create a TGraphErrors with the centrality midpoint and dNch/deta
+            model_graph = ROOT.TGraphErrors(1)
+            model_graph.SetPoint(0, centrality_midpoint, dNchdeta)
+            model_graph.SetPointError(0, centrality_width, 0)  # x-error for centrality range, y-error assumed 0
+            
+            # Style the model graph for plotting
+            model_graph.SetMarkerSize(self.marker_size)
+            model_graph.SetMarkerStyle(self.data_marker + 1)
+            model_graph.SetMarkerColor(ROOT.kRed)
+            model_graph.SetLineStyle(self.line_style)
+            model_graph.SetLineWidth(self.line_width)
+            model_graph.Draw('PE Z same')
+
 
         # Add legend
         legend = ROOT.TLegend(0.4, 0.75, 0.75, 0.85)

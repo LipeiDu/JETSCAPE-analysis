@@ -247,6 +247,54 @@ class PlotUtils(common_base.CommonBase):
 
         return g
 
+    # ---------------------------------------------------------------
+    # Get tgraph from data points specified in config block
+    # ---------------------------------------------------------------
+    def tgraph_from_custom_yaml(self, block, sqrts, observable_type, observable, centrality_index=None):
+        """
+        Loads custom data from YAML and returns a TGraphAsymmErrors object.
+        
+        Parameters:
+            data_filename (str): Path to the YAML file.
+            centrality_index (int, optional): Index for specific centrality data. If None, load all centralities.
+            
+        Returns:
+            ROOT.TGraphAsymmErrors: The graph representing the data.
+        """
+        # Load yaml file containing the data
+        data_dir = f'data/STAT/{sqrts}/{observable_type}/{observable}'
+        data_filename = os.path.join(data_dir, block['user_data'])
+
+        with open(data_filename, 'r') as stream:
+            data = yaml.safe_load(stream)
+
+        key = "data_soft"
+
+        # Extract the data
+        x_values = data[key]["x"]
+        y_values = np.array(data[key]["y"])
+        y_errors = np.array(data[key]["y_err"])
+
+        # Compute centrality bin centers
+        x_centers = np.array([(c[0] + c[1]) / 2 for c in x_values])
+        x_errors = np.array([(c[1] - c[0]) / 2 for c in x_values])
+
+        if centrality_index is not None:
+            # If a specific centrality is requested
+            x_centers = np.array([x_centers[centrality_index]])
+            x_errors = np.array([x_errors[centrality_index]])
+            y_values = np.array([y_values[centrality_index]])
+            y_errors = np.array([y_errors[centrality_index]])
+
+        # Construct TGraphAsymmErrors
+        n_points = len(x_centers)
+        graph = ROOT.TGraphAsymmErrors(n_points)
+        for i in range(n_points):
+            graph.SetPoint(i, x_centers[i], y_values[i])
+            graph.SetPointError(i, x_errors[i], x_errors[i], y_errors[i], y_errors[i])
+
+        return graph
+
     #---------------------------------------------------------------
     # Truncate data tgraph to histogram binning range
     #---------------------------------------------------------------

@@ -38,6 +38,17 @@ n_oversample: 20 # number of oversamples in each event
 
 selected_pid: [9999]
 
+soft_integrated:
+  # https://www.hepdata.net/record/ins793126
+  multiplicity_star:
+    centrality: [[30,40]]
+    xtitle: 'centrality'
+    logy: True
+
+    user_data: 'user_data.yaml'
+
+    ytitle_AA: "multiplicity"
+
 pt_differential_flows:
   # https://www.hepdata.net/record/ins660793
   v2_SP_star:
