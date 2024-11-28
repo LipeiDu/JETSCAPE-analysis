@@ -68,12 +68,16 @@ class PlotResults(common_base.CommonBase):
         # Read config file
         with open(config_file, 'r') as stream:
             self.config = yaml.safe_load(stream)
+
         self.sqrts = self.config['sqrt_s']
         self.n_order = self.config['n_order']
+
+        # for pT interpolation in flow analysis
         self.pT_low = self.config['pT_low']
         self.pT_high = self.config['pT_high']
         self.npT = self.config['npT']
 
+        # Qn vector parameters
         self.n_pt_bins = self.config['n_pt_bins']
         self.pt_min = self.config['pt_min']
         self.pt_max = self.config['pt_max']
@@ -92,7 +96,7 @@ class PlotResults(common_base.CommonBase):
 
         self.plot_soft_observable(observable_type='soft_integrated')
 
-        self.plot_soft_observable(observable_type='pt_differential_flows')
+        self.plot_soft_observable(observable_type='soft_differential')
         
         # self.plot_event_qa()
 
@@ -220,11 +224,18 @@ class PlotResults(common_base.CommonBase):
                 self.logy = block["logy_pp"]
 
         #for v2
-        if 'v2' in observable:
-            self.y_min = -0.05
-            self.y_max = 0.8
-            self.y_ratio_min = -0.5
-            self.y_ratio_max = 1.99
+        if 'integrated' in observable_type:
+            if 'v2' in observable:
+                self.y_min = -0.05
+                self.y_max = 0.15
+                self.y_ratio_min = -0.5
+                self.y_ratio_max = 1.99
+        if 'differential' in observable_type:
+            if 'v2' in observable:
+                self.y_min = -0.05
+                self.y_max = 0.5
+                self.y_ratio_min = -0.5
+                self.y_ratio_max = 1.99
 
 
         # for multiplicity
@@ -268,183 +279,145 @@ class PlotResults(common_base.CommonBase):
         if centrality not in self.observable_centrality_list:
             self.observable_centrality_list.append(centrality)
 
-        self.get_histogram(observable_type, observable, centrality, pt_suffix=pt_suffix)
-        self.post_process_histogram(observable_type, observable, block, centrality, centrality_index)
+        self.get_histogram(observable_type, observable, centrality)
+        self.post_process_histogram(observable_type, observable, block, centrality)
 
     #-------------------------------------------------------------------------------------------
     # Get histogram and add to self.observable_settings
-    #  - In AA case, also add hole histogram
-    #  - In the case of semi-inclusive measurements construct difference of histograms
     #-------------------------------------------------------------------------------------------
-    def get_histogram(self, observable_type, observable, centrality, method='', collection_label='', pt_suffix=''):
+    def get_histogram(self, observable_type, observable, centrality):
+        keys = [key.GetName() for key in self.input_file.GetListOfKeys()]
+
+        # Common histogram name prefix
+        base_name = f"h_{observable_type}_{observable}_{centrality}"
 
         if observable_type == "soft_integrated":
             if 'multiplicity' in observable:
-                self.observable_settings['hist_dNchdeta'] = self.input_file.Get("hist_dNchdeta")
-            if 'vn' in observable:
-                self.observable_settings['hist_N_vn'] = self.input_file.Get("hist_N_vn")
+                hist_name = f"{base_name}_dNchdeta"
+                if hist_name in keys:
+                    self.observable_settings['hist_dNchdeta'] = self.input_file.Get(hist_name)
+            
+            if 'v2' in observable:
+                self.observable_settings['hist_N_vn'] = self.input_file.Get(f"{base_name}_N_vn")
 
                 self.observable_settings['hist_vn_real'] = {}
                 self.observable_settings['hist_vn_imag'] = {}
 
                 for n in range(1, self.n_order):
-                    self.observable_settings['hist_vn_real'][n] = self.input_file.Get(f"hist_vn_real_n{n}")
-                    self.observable_settings['hist_vn_imag'][n] = self.input_file.Get(f"hist_vn_imag_n{n}")
+                    real_name = f"{base_name}_vn_real_n{n}"
+                    imag_name = f"{base_name}_vn_imag_n{n}"
+                    self.observable_settings['hist_vn_real'][n] = self.input_file.Get(real_name)
+                    self.observable_settings['hist_vn_imag'][n] = self.input_file.Get(imag_name)
 
-        elif observable_type == "pt_differential_flows" and 'v2' in observable:
-            # Initialize dictionaries to store the histograms
-            self.observable_settings['hist_N_Qn_pT'] = self.input_file.Get("hist_N_Qn_pT")
-            self.observable_settings['hist_N_Qn_ref'] = self.input_file.Get("hist_N_Qn_ref")
+        if observable_type == "soft_differential":
+            if 'v2' in observable:
+                self.observable_settings['hist_N_Qn_pT'] = self.input_file.Get(f"{base_name}_N_Qn_pT")
+                self.observable_settings['hist_N_Qn_ref'] = self.input_file.Get(f"{base_name}_N_Qn_ref")
 
-            self.observable_settings['hist_Qn_pT_real'] = {}
-            self.observable_settings['hist_Qn_pT_imag'] = {}
-            self.observable_settings['hist_Qn_ref_real'] = {}
-            self.observable_settings['hist_Qn_ref_imag'] = {}
+                self.observable_settings['hist_Qn_pT_real'] = {}
+                self.observable_settings['hist_Qn_pT_imag'] = {}
+                self.observable_settings['hist_Qn_ref_real'] = {}
+                self.observable_settings['hist_Qn_ref_imag'] = {}
 
-            for n in range(1, self.n_order):
-                self.observable_settings['hist_Qn_pT_real'][n] = self.input_file.Get(f"hist_Qn_pT_real_n{n}")
-                self.observable_settings['hist_Qn_pT_imag'][n] = self.input_file.Get(f"hist_Qn_pT_imag_n{n}")
-                self.observable_settings['hist_Qn_ref_real'][n] = self.input_file.Get(f"hist_Qn_ref_real_n{n}")
-                self.observable_settings['hist_Qn_ref_imag'][n] = self.input_file.Get(f"hist_Qn_ref_imag_n{n}")
-        else:
-            # Handle other cases as before
-            self.hname = f'h_{observable_type}_{observable}{method}{self.suffix}{collection_label}_{centrality}{pt_suffix}'
-            if self.hname in keys:
-                h_jetscape = self.input_file.Get(self.hname)
-                h_jetscape.SetDirectory(0)
-                if not h_jetscape.GetSumw2():
-                    h_jetscape.Sumw2()
-            else:
-                h_jetscape = None
-            self.observable_settings[f'jetscape_distribution{collection_label}'] = h_jetscape
+                for n in range(1, self.n_order):
+                    real_name_pT = f"{base_name}_Qn_pT_real_n{n}"
+                    imag_name_pT = f"{base_name}_Qn_pT_imag_n{n}"
+                    real_name_ref = f"{base_name}_Qn_ref_real_n{n}"
+                    imag_name_ref = f"{base_name}_Qn_ref_imag_n{n}"
+                    self.observable_settings['hist_Qn_pT_real'][n] = self.input_file.Get(real_name_pT)
+                    self.observable_settings['hist_Qn_pT_imag'][n] = self.input_file.Get(imag_name_pT)
+                    self.observable_settings['hist_Qn_ref_real'][n] = self.input_file.Get(real_name_ref)
+                    self.observable_settings['hist_Qn_ref_imag'][n] = self.input_file.Get(imag_name_ref)
 
     #-------------------------------------------------------------------------------------------
     # Perform any additional manipulations on scaled histograms
     #-------------------------------------------------------------------------------------------
-    def post_process_histogram(self, observable_type, observable, block, centrality, centrality_index, method='', collection_label=''):
+    def post_process_histogram(self, observable_type, observable, block, centrality):
+
+        base_name = f"jetscape_distribution_{observable_type}_{observable}_{centrality}"
+
         if observable_type == "soft_integrated":
             if 'multiplicity' in observable:
-
                 hist_dNchdeta = self.observable_settings['hist_dNchdeta']
 
-                n_events = hist_dNchdeta.GetNbinsX()
-                tot_dNchdeta = 0.
+                if hist_dNchdeta:
+                    n_events = hist_dNchdeta.GetNbinsX()
+                    tot_dNchdeta = sum(hist_dNchdeta.GetBinContent(i) for i in range(1, n_events + 1))
+                    mean_dNchdeta = tot_dNchdeta / n_events if n_events > 0 else 0
 
-                # Loop over event IDs to process the data
-                for event_id in range(1,  n_events+ 1):
+                    self.observable_settings[f'{base_name}'] = mean_dNchdeta
 
-                    dNchdeta = hist_dNchdeta.GetBinContent(event_id)
-                    tot_dNchdeta += dNchdeta
-
-                mean_dNchdeta = tot_dNchdeta / n_events if n_events > 0 else 0
-
-                self.observable_settings['dNchdeta'] = mean_dNchdeta
-
-            elif 'vn' in observable:
-                # Retrieve the necessary histograms
+            elif 'v2' in observable:
                 hist_N_vn = self.observable_settings['hist_N_vn']
                 hist_vn_real = self.observable_settings['hist_vn_real']
                 hist_vn_imag = self.observable_settings['hist_vn_imag']
 
-                # Initialize lists to hold vn data for each event
+                # read histogram and pack results in the right format
                 vn_data_array = []
-
-                # Loop over event IDs to gather data
                 for event_id in range(1, hist_N_vn.GetNbinsX() + 1):
-                    # Collect multiplicity (N) for this event
                     N_event = hist_N_vn.GetBinContent(event_id)
-                    temp_vn_array = [N_event]  # Start with N as the first element
-
-                    # For each harmonic order, get real and imaginary parts and pack them
+                    temp_vn_array = [N_event]
                     for n in range(1, self.n_order):
                         vn_real_event = hist_vn_real[n].GetBinContent(event_id)
                         vn_imag_event = hist_vn_imag[n].GetBinContent(event_id)
-                        
-                        # Create complex vn for this harmonic order
-                        vn_inte = vn_real_event + 1j * vn_imag_event
-                        temp_vn_array.append(vn_inte)
-
-                    # Append this event's data to vn_data_array
+                        temp_vn_array.append(vn_real_event + 1j * vn_imag_event)
                     vn_data_array.append(temp_vn_array)
 
-                if "vn2" in observable:
+                # integrated flow calculation
+                if "two" in observable:
                     vn2 = self.calculate_vn2(vn_data_array)
-                    self.observable_settings['vn2'] = vn2
+                    self.observable_settings[f'{base_name}'] = vn2
 
-                if "vn4" in observable:
+                if "four" in observable:
                     vn4 = self.calculate_vn4(vn_data_array)
-                    self.observable_settings['vn4'] = vn4
+                    self.observable_settings[f'{base_name}'] = vn4
 
-        elif observable_type == "pt_differential_flows" and 'v2' in observable:
-            hist_N_Qn_pT = self.observable_settings['hist_N_Qn_pT']
-            hist_N_Qn_ref = self.observable_settings['hist_N_Qn_ref']
-            hist_Qn_pT_real = self.observable_settings['hist_Qn_pT_real']
-            hist_Qn_pT_imag = self.observable_settings['hist_Qn_pT_imag']
-            hist_Qn_ref_real = self.observable_settings['hist_Qn_ref_real']
-            hist_Qn_ref_imag = self.observable_settings['hist_Qn_ref_imag']
+        if observable_type == "soft_differential":
+            if 'v2' in observable:
+                hist_N_Qn_pT = self.observable_settings['hist_N_Qn_pT']
+                hist_N_Qn_ref = self.observable_settings['hist_N_Qn_ref']
+                hist_Qn_pT_real = self.observable_settings['hist_Qn_pT_real']
+                hist_Qn_pT_imag = self.observable_settings['hist_Qn_pT_imag']
+                hist_Qn_ref_real = self.observable_settings['hist_Qn_ref_real']
+                hist_Qn_ref_imag = self.observable_settings['hist_Qn_ref_imag']
 
-            QnpT_diff_array = []
-            Qnref_array = []
+                # read histogram and pack results in the right format
+                QnpT_diff_array, Qnref_array = [], []
 
-            # Loop over event IDs to process the data
-            for event_id in range(1, hist_N_Qn_pT.GetNbinsX() + 1):
-                N_Qn_pT = np.array([hist_N_Qn_pT.GetBinContent(event_id, pT_bin) for pT_bin in range(1, hist_N_Qn_pT.GetNbinsY() + 1)])
-                N_Qn_ref = hist_N_Qn_ref.GetBinContent(event_id)
+                for event_id in range(1, hist_N_Qn_pT.GetNbinsX() + 1):
+                    N_Qn_pT = np.array([hist_N_Qn_pT.GetBinContent(event_id, pT_bin) for pT_bin in range(1, hist_N_Qn_pT.GetNbinsY() + 1)])
+                    N_Qn_ref = hist_N_Qn_ref.GetBinContent(event_id)
 
-                QnpT_diff_event = [N_Qn_pT]
-                Qnref_event = [N_Qn_ref]
+                    QnpT_diff_event = [N_Qn_pT]
+                    Qnref_event = [N_Qn_ref]
+                    for n in range(1, self.n_order):
+                        Qn_pT_real_n = np.array([hist_Qn_pT_real[n].GetBinContent(event_id, pT_bin) for pT_bin in range(1, hist_N_Qn_pT.GetNbinsY() + 1)])
+                        Qn_pT_imag_n = np.array([hist_Qn_pT_imag[n].GetBinContent(event_id, pT_bin) for pT_bin in range(1, hist_N_Qn_pT.GetNbinsY() + 1)])
+                        Qn_ref_real = hist_Qn_ref_real[n].GetBinContent(event_id)
+                        Qn_ref_imag = hist_Qn_ref_imag[n].GetBinContent(event_id)
+                        QnpT_diff_event.append(Qn_pT_real_n + 1j * Qn_pT_imag_n)
+                        Qnref_event.append(Qn_ref_real + 1j * Qn_ref_imag)
+                    QnpT_diff_array.append(QnpT_diff_event)
+                    Qnref_array.append(Qnref_event)
 
-                # Loop over harmonic orders to get Qn_pT and Qn_ref data
-                for n in range(1, self.n_order):
-                    Qn_pT_real_n = np.array([hist_Qn_pT_real[n].GetBinContent(event_id, pT_bin) for pT_bin in range(1, hist_N_Qn_pT.GetNbinsY() + 1)])
-                    Qn_pT_imag_n = np.array([hist_Qn_pT_imag[n].GetBinContent(event_id, pT_bin) for pT_bin in range(1, hist_N_Qn_pT.GetNbinsY() + 1)])
-                    Qn_ref_real = hist_Qn_ref_real[n].GetBinContent(event_id)
-                    Qn_ref_imag = hist_Qn_ref_imag[n].GetBinContent(event_id)
+                # integrated flow calculation
+                if "SP" in observable:
+                    vn_SP_diff = self.calculate_vnSP_diff(QnpT_diff_array, Qnref_array)
+                    vn_SP_diff_formatted = {
+                        'pT_bins': self.pt_array,  # Using self.pt_array defined in the constructor
+                        'vn_values': vn_SP_diff[0],  # vn_values for the different harmonic orders
+                        'vn_errors': vn_SP_diff[1]   # vn_errors for the different harmonic orders
+                    }
+                    self.observable_settings[f'{base_name}'] = vn_SP_diff_formatted
 
-                    # Pack complex Qn_pT and Qn_ref data
-                    QnpT_diff_event.append((Qn_pT_real_n + 1j * Qn_pT_imag_n))
-                    Qnref_event.append((Qn_ref_real + 1j * Qn_ref_imag))
-
-                # Append formatted data for this event
-                QnpT_diff_array.append(QnpT_diff_event)
-                Qnref_array.append(Qnref_event)
-
-            if "SP" in observable:
-                # I. Scalar product
-                # Calculate vn_diff_SP and store the processed data
-                vn_diff_SP = self.calculate_vn_diff_SP(QnpT_diff_array, Qnref_array)
-
-                # Include pT bins in vn_diff_SP for plotting
-                vn_diff_SP_formatted = {
-                    'pT_bins': self.pt_array,  # Using self.pt_array defined in the constructor
-                    'vn_values': vn_diff_SP[0],
-                    'vn_errors': vn_diff_SP[1]
-                }
-
-                # Store in observable_settings for further use
-                self.observable_settings['vn_diff_SP'] = vn_diff_SP_formatted
-
-            if "cumulant" in observable:
-                # II. four-particle cumulants
-                # Calculate vn4_diff and store the processed data
-                vn4_diff = self.calculate_vn4_diff(QnpT_diff_array, Qnref_array)
-
-                # Include pT bins in vn4_diff for plotting, using the same format
-                vn4_diff_formatted = {
-                    'pT_bins': self.pt_array,  # Using self.pt_array defined in the constructor
-                    'vn_values': vn4_diff[0],  # vn_values for the different harmonic orders
-                    'vn_errors': vn4_diff[1]   # vn_errors for the different harmonic orders
-                }
-
-                # Store in observable_settings for further use
-                self.observable_settings['vn4_diff'] = vn4_diff_formatted
-
-        else:
-            # Handle other cases as before
-            h = self.observable_settings[f'jetscape_distribution']
-            if h:
-                # (existing processing code here)
-                pass
+                if "four" in observable:
+                    vn4_diff = self.calculate_vn4_diff(QnpT_diff_array, Qnref_array)
+                    vn4_diff_formatted = {
+                        'pT_bins': self.pt_array,  # Using self.pt_array defined in the constructor
+                        'vn_values': vn4_diff[0],  # vn_values for the different harmonic orders
+                        'vn_errors': vn4_diff[1]   # vn_errors for the different harmonic orders
+                    }
+                    self.observable_settings[f'{base_name}'] = vn4_diff_formatted
 
     #-------------------------------------------------------------------------------------------
     # Functions for flow calculations
@@ -556,7 +529,7 @@ class PlotResults(common_base.CommonBase):
 
         return results
 
-    def calculate_vn_diff_SP(self, QnpT_diff, Qnref):
+    def calculate_vnSP_diff(self, QnpT_diff, Qnref):
         """
             this funciton calculates the scalar-product vn
             assumption: no overlap between particles of interest
@@ -697,10 +670,11 @@ class PlotResults(common_base.CommonBase):
 
         if observable_type == "soft_integrated":
 
-            self.plot_distribution_and_ratio(observable_type, observable, centrality, label, logy=logy)
+            self.plot_distribution_and_ratio(observable_type, observable, centrality, logy)
 
-        elif observable_type in ['pt_differential_flows'] and 'v2' in observable:
-            self.plot_distribution_and_ratio(observable_type, observable, centrality, label)
+        if observable_type == 'soft_differential':
+
+            self.plot_distribution_and_ratio(observable_type, observable, centrality, logy)
 
         # # If AA: Plot PbPb/pp ratio, and comparison to data
         # # If pp: Plot distribution, and ratio to data
@@ -761,18 +735,144 @@ class PlotResults(common_base.CommonBase):
     #-------------------------------------------------------------------------------------------
     # Plot distributions in upper panel, and ratio in lower panel
     #-------------------------------------------------------------------------------------------
-    def plot_distribution_and_ratio(self, observable_type, observable, centrality, label, pt_suffix='', logy=False):
-        # Check if the data distribution is available
-        if not self.observable_settings['data_distribution']:
-            print(f'WARNING: skipping {label} since data is missing')
+    def rebin_vn_results(self, pT_original, vn_values, vn_errors, pT_bins):
+        """
+        Rebin vn values and errors to match the provided pT_bins.
+        
+        Parameters:
+        - pT_original: Original pT array (1D array).
+        - vn_values: vn values (list of arrays, one for each harmonic order).
+        - vn_errors: vn errors (list of arrays, one for each harmonic order).
+        - pT_bins: The desired pT bins for rebinning (1D array).
+
+        Returns:
+        - rebinned_vn_values: List of rebinned vn values (one array per harmonic order).
+        - rebinned_vn_errors: List of rebinned vn errors (one array per harmonic order).
+        """
+        rebinned_vn_values = []
+        rebinned_vn_errors = []
+
+        for vn_vals, vn_errs in zip(vn_values, vn_errors):
+            rebinned_vals = []
+            rebinned_errs = []
+
+            for i in range(len(pT_bins) - 1):
+                mask = (pT_original >= pT_bins[i]) & (pT_original < pT_bins[i + 1])
+                if np.any(mask):
+                    weights = 1 / (vn_errs[mask] ** 2 + 1e-20)  # Weight by inverse variance
+                    mean_vn = np.sum(vn_vals[mask] * weights) / np.sum(weights)
+                    err_vn = np.sqrt(1 / np.sum(weights))
+                else:
+                    mean_vn, err_vn = 0, 0
+
+                rebinned_vals.append(mean_vn)
+                rebinned_errs.append(err_vn)
+
+            rebinned_vn_values.append(np.array(rebinned_vals))
+            rebinned_vn_errors.append(np.array(rebinned_errs))
+
+        return rebinned_vn_values, rebinned_vn_errors
+
+    def plot_distribution_and_ratio(self, observable_type, observable, centrality, logy=False):
+        """
+        Plot data and model results for both soft_integrated (centrality-based) and soft_differential (pT-differential).
+        Includes rebinning for pT-differential observables based on experimental pT bins.
+        """
+        # Determine the base name for fetching model results
+        base_name = f"jetscape_distribution_{observable_type}_{observable}_{centrality}"
+        print("base_name", base_name)
+        if base_name not in self.observable_settings:
+            print(f"WARNING: Model results for {base_name} not found.")
             return
+
+        # Determine if observable is soft_integrated or soft_differential
+        is_integrated = observable_type == "soft_integrated"
+
+        # Fetch the experimental data bins
+        if isinstance(self.observable_settings['data_distribution'], ROOT.TGraph):
+            graph = self.observable_settings['data_distribution']
+            n_points = graph.GetN()
+            x_values = sorted([graph.GetX()[i] for i in range(n_points)])  # Sort x_values in ascending order
+
+            if not is_integrated:
+                # Directly compute bin edges using midpoints
+                bin_edges = [x_values[0] - (x_values[1] - x_values[0]) / 2]  # First edge
+                bin_edges.extend([(x_values[i - 1] + x_values[i]) / 2 for i in range(1, len(x_values))])  # Midpoints
+                bin_edges.append(x_values[-1] + (x_values[-1] - x_values[-2]) / 2)  # Last edge
+                pT_bins_data = np.array(bin_edges)
+                print("Derived Bin Edges (pT_bins_data):", pT_bins_data)
+                print("Bin Widths (Derived):", np.diff(pT_bins_data))
+            else:
+                # For integrated results, create centrality bin edges
+                bin_width = x_values[-1] - x_values[-2] if len(x_values) > 1 else 1
+                self.bins = np.array(x_values + [x_values[-1] + bin_width])
+        else:
+            print(f"WARNING: Data distribution not available or invalid for {observable}.")
+            return
+
+        # Fetch the model results
+        model_results = self.observable_settings[base_name]
+
+        # Process soft_integrated observables (no rebinning required)
+        if is_integrated:
+            # Centrality midpoint and error
+            centrality_midpoint = (centrality[0] + centrality[1]) / 2.0
+            centrality_width = (centrality[1] - centrality[0]) / 2.0
+
+            # Determine the y-value and error based on the observable
+            if 'multiplicity' in observable:
+                y_value = model_results
+                y_error = 0  # Assuming no error for multiplicity
+            elif 'v2' in observable:
+                if 'two' in observable:
+                    vn2, vn2_err = model_results
+                    y_value = vn2[1]  # vn_2 for n=2
+                    y_error = vn2_err[1]
+                elif 'four' in observable:
+                    vn4 = model_results
+                    y_value = vn4[4]  # v2_4 for n=2
+                    y_error = vn4[5]  # v2_4_err for n=2
+            else:
+                print(f"WARNING: Unrecognized soft_integrated observable {observable}.")
+                return
+
+            # Create a TGraphErrors for centrality-based results
+            model_graph = ROOT.TGraphErrors(1)
+            model_graph.SetPoint(0, centrality_midpoint, y_value)
+            model_graph.SetPointError(0, centrality_width, y_error)
+
+        # Process soft_differential observables (with rebinning)
+        else:
+            if 'v2' in observable:
+                pT_model = model_results['pT_bins']
+                vn_values = model_results['vn_values']
+                vn_errors = model_results['vn_errors']
+
+                # Rebin the model results
+                vn_values_rebinned, vn_errors_rebinned = self.rebin_vn_results(
+                    pT_model, vn_values, vn_errors, pT_bins_data
+                )
+
+                model_graph = ROOT.TGraphErrors(len(x_values))
+                for i, (vn, vn_err) in enumerate(zip(vn_values_rebinned[1], vn_errors_rebinned[1])):  # n=2
+                    bin_center = x_values[i]  # Use experimental bin centers
+                    bin_width = (pT_bins_data[i + 1] - pT_bins_data[i]) / 2  # Use derived edges for widths
+                    model_graph.SetPoint(i, bin_center, vn)
+                    model_graph.SetPointError(i, bin_width, vn_err)
+
+        # Style the model graph
+        model_graph.SetMarkerSize(self.marker_size)
+        model_graph.SetMarkerStyle(self.data_marker + 1)
+        model_graph.SetMarkerColor(ROOT.kRed)
+        model_graph.SetLineStyle(self.line_style)
+        model_graph.SetLineWidth(self.line_width)
 
         # Create a canvas for the plot
         c = ROOT.TCanvas('c', 'c', 1000, 950)
         c.Draw()
         c.cd()
 
-        # Configure the top pad (for the data distribution)
+        # Configure the top pad
         pad1 = ROOT.TPad('myPad', 'The pad', 0, 0, 1, 1)
         pad1.SetLeftMargin(0.2)
         pad1.SetTopMargin(0.08)
@@ -784,21 +884,13 @@ class PlotResults(common_base.CommonBase):
             pad1.SetLogy()
         pad1.cd()
 
-        # Check if the data distribution is a TGraph and extract x-values
-        if isinstance(self.observable_settings['data_distribution'], ROOT.TGraph):
-            graph = self.observable_settings['data_distribution']
-            n_points = graph.GetN()
-            x_values = sorted([graph.GetX()[i] for i in range(n_points)])  # Sort x_values in ascending order
-
-            # Construct bin edges for the experimental data
-            bin_width = x_values[-1] - x_values[-2] if len(x_values) > 1 else 1  # Set a default bin width if only one point exists
-            self.bins = np.array(x_values + [x_values[-1] + bin_width])  # Add an extra bin edge based on the last width
+        # Configure and draw the blank histogram for the axes
+        if is_integrated:
+            x_min, x_max = self.bins[0], self.bins[-1]  # Extend centrality range slightly for visualization
         else:
-            # If it's a histogram, use the original method
-            self.bins = np.array(self.observable_settings['data_distribution'].GetXaxis().GetXbins())
+            x_min, x_max = pT_bins_data[0], pT_bins_data[-1]
 
-        # Create and configure the blank histogram for the axes
-        myBlankHisto = ROOT.TH1F('myBlankHisto', 'Blank Histogram', 1, self.bins[0], self.bins[-1])
+        myBlankHisto = ROOT.TH1F('myBlankHisto', 'Blank Histogram', 1, x_min, x_max)
         myBlankHisto.SetNdivisions(505)
         myBlankHisto.SetXTitle(self.xtitle)
         myBlankHisto.SetYTitle(self.ytitle)
@@ -822,104 +914,14 @@ class PlotResults(common_base.CommonBase):
         self.observable_settings['data_distribution'].SetLineColor(self.data_color)
         self.observable_settings['data_distribution'].Draw('PE Z same')
 
-        # Plot the model results
-        if 'vn_diff_SP' in self.observable_settings:
-            vn_diff_SP = self.observable_settings['vn_diff_SP']
-            pT_bins_model = vn_diff_SP['pT_bins']
-
-            # Since vn_values and vn_errors are lists of arrays for each harmonic order,
-            # we select the values and errors for n=2
-            vn_values = vn_diff_SP['vn_values'][1]
-            vn_errors = vn_diff_SP['vn_errors'][1]
-
-            # Create a TGraphErrors for the model results
-            model_graph = ROOT.TGraphErrors(len(pT_bins_model))
-            for i, (pT, vn, vn_err) in enumerate(zip(pT_bins_model, vn_values, vn_errors)):
-                if vn > 1.e-10 and vn is not None:  
-                    model_graph.SetPoint(i, pT, vn)
-                    model_graph.SetPointError(i, 0, vn_err)
-
-            model_graph.SetMarkerSize(self.marker_size)
-            model_graph.SetMarkerStyle(self.data_marker + 1)
-            model_graph.SetMarkerColor(ROOT.kRed)
-            model_graph.SetLineStyle(self.line_style)
-            model_graph.SetLineWidth(self.line_width)
-            # model_graph.SetLineColor(self.model_color)
-            model_graph.Draw('PE Z same')
-
-                # Plot the model results
-        if 'vn4_diff' in self.observable_settings:
-            vn4_diff = self.observable_settings['vn4_diff']
-            pT_bins_model = vn4_diff['pT_bins']
-
-            # Since vn_values and vn_errors are lists of arrays for each harmonic order,
-            # we select the values and errors for n=2
-            vn_values = vn4_diff['vn_values'][1]
-            vn_errors = vn4_diff['vn_errors'][1]
-
-            # Create a TGraphErrors for the model results
-            model_graph = ROOT.TGraphErrors(len(pT_bins_model))
-            for i, (pT, vn, vn_err) in enumerate(zip(pT_bins_model, vn_values, vn_errors)):
-                if vn > 1.e-10 and vn is not None:  
-                    model_graph.SetPoint(i, pT, vn)
-                    model_graph.SetPointError(i, 0, vn_err)
-
-            model_graph.SetMarkerSize(self.marker_size)
-            model_graph.SetMarkerStyle(self.data_marker + 1)
-            model_graph.SetMarkerColor(ROOT.kRed)
-            model_graph.SetLineStyle(self.line_style)
-            model_graph.SetLineWidth(self.line_width)
-            # model_graph.SetLineColor(self.model_color)
-            model_graph.Draw('PE Z same')
-
-        # Plot the model results based on observable type
-        if observable_type == "soft_integrated":
-            centrality_midpoint = (centrality[0] + centrality[1]) / 2.0
-            centrality_width = (centrality[1] - centrality[0]) / 2.0  # x-error for centrality range
-
-            # Determine the y-value and y-error based on the observable
-            if 'multiplicity' in observable:
-                y_value = self.observable_settings['dNchdeta']
-                y_error = 0  # Assuming no y-error for multiplicity
-
-            elif 'vn2' in observable:
-                # Extract vn_2 and vn_2_err for n=2 from self.observable_settings['vn2']
-                vn2, vn2_err = self.observable_settings['vn2']
-                y_value = vn2[1]  # vn_2 for n=2 (index 1 in the returned array)
-                y_error = vn2_err[1]
-                print("vn2=", y_value)
-
-            elif 'vn4' in observable:
-                # Extract v2_4 and v2_4_err for n=2 from self.observable_settings['vn4']
-                vn4 = self.observable_settings['vn4']
-                y_value = vn4[4]   # v2_4 for n=2 (index 4 in the returned list)
-                y_error = vn4[5]   # v2_4_err for n=2 (index 5 in the returned list)
-
-                print("vn4=", y_value)
-
-            else:
-                print(f"WARNING: Observable {observable} not recognized for plotting.")
-                return
-
-            # Create TGraphErrors for the model results
-            model_graph = ROOT.TGraphErrors(1)
-            model_graph.SetPoint(0, centrality_midpoint, y_value)
-            model_graph.SetPointError(0, centrality_width, y_error)
-
-            # Style the model graph for plotting
-            model_graph.SetMarkerSize(self.marker_size)
-            model_graph.SetMarkerStyle(self.data_marker + 1)
-            model_graph.SetMarkerColor(ROOT.kRed)
-            model_graph.SetLineStyle(self.line_style)
-            model_graph.SetLineWidth(self.line_width)
-            model_graph.Draw('PE Z same')
+        # Draw the model graph
+        model_graph.Draw('PE Z same')
 
         # Add legend
         legend = ROOT.TLegend(0.4, 0.75, 0.75, 0.85)
         self.plot_utils.setup_legend(legend, 0.045, sep=0.001)
         legend.AddEntry(self.observable_settings['data_distribution'], 'Data', 'PE')
-        if 'vn_diff_SP' in self.observable_settings:
-            legend.AddEntry(model_graph, 'Model', 'PE')
+        legend.AddEntry(model_graph, 'Model', 'PE')
         legend.Draw()
 
         # Add text annotations
@@ -929,103 +931,11 @@ class PlotResults(common_base.CommonBase):
         text_latex.SetTextSize(0.065)
         text = f'#bf{{{observable_type}_{observable}}} #sqrt{{#it{{s}}}} = {self.sqrts / 1000.} TeV'
         text_latex.DrawLatex(0.25, 0.83, text)
-        text = f'{centrality} {self.suffix} {pt_suffix}'
+        text = f'{centrality}'
         text_latex.DrawLatex(0.25, 0.73, text)
-        if self.skip_pp:
-            text = 'skip data plot -- no pp data in HEPData'
-            text_latex.DrawLatex(0.25, 0.63, text)
 
         # Save the canvas
-        hname = f'h_{observable_type}_{observable}{self.suffix}_{centrality}{pt_suffix}'
-        c.SaveAs(os.path.join(self.output_dir, f'{hname}{self.file_format}'))
-        c.Close()
-
-    def plot_data_distribution(self, observable_type, observable, centrality, label, pt_suffix='', logy=False):
-        # Check if the data distribution is available
-        if not self.observable_settings['data_distribution']:
-            print(f'WARNING: skipping {label} since data is missing')
-            return
-
-        # Create a canvas for the plot
-        c = ROOT.TCanvas('c', 'c', 600, 650)
-        c.Draw()
-        c.cd()
-
-        # Configure the top pad (for the data distribution)
-        pad1 = ROOT.TPad('myPad', 'The pad', 0, 0, 1, 1)
-        pad1.SetLeftMargin(0.2)
-        pad1.SetTopMargin(0.08)
-        pad1.SetRightMargin(0.04)
-        pad1.SetBottomMargin(0.15)
-        pad1.SetTicks(0, 1)
-        pad1.Draw()
-        if logy:
-            pad1.SetLogy()
-        pad1.cd()
-
-        print("self.observable_settings['data_distribution'].GetXaxis().GetXbins()=", self.observable_settings['data_distribution'].GetXaxis().GetXbins())
-        # Create and configure the blank histogram for the axes
-        # self.bins = np.array(self.observable_settings['data_distribution'].GetXaxis().GetXbins())
-        
-        # Check if the data distribution is a TGraph and extract x-values
-        if isinstance(self.observable_settings['data_distribution'], ROOT.TGraph):
-            graph = self.observable_settings['data_distribution']
-            n_points = graph.GetN()
-            x_values = [graph.GetX()[i] for i in range(n_points)]
-            
-            # Construct bin edges
-            # If you want equally spaced bins between the min and max x-values:
-            self.bins = np.array(x_values + [x_values[-1] + (x_values[-1] - x_values[-2])])
-        else:
-            # If it's a histogram, use the original method
-            self.bins = np.array(self.observable_settings['data_distribution'].GetXaxis().GetXbins())
-        print("self.bins=", self.bins)
-
-        myBlankHisto = ROOT.TH1F('myBlankHisto', 'Blank Histogram', 1, self.bins[0], self.bins[-1])
-        myBlankHisto.SetNdivisions(505)
-        myBlankHisto.SetXTitle(self.xtitle)
-        myBlankHisto.SetYTitle(self.ytitle)
-        myBlankHisto.SetMaximum(self.y_max)
-        myBlankHisto.SetMinimum(self.y_min)
-        myBlankHisto.GetYaxis().SetRangeUser(self.y_min, self.y_max)
-        myBlankHisto.GetYaxis().SetTitleSize(0.08)
-        myBlankHisto.GetYaxis().SetTitleOffset(1.1)
-        myBlankHisto.GetYaxis().SetLabelSize(0.06)
-        myBlankHisto.GetXaxis().SetTitleSize(0.08)
-        myBlankHisto.GetXaxis().SetTitleOffset(1.1)
-        myBlankHisto.GetXaxis().SetLabelSize(0.06)
-        myBlankHisto.Draw('E')
-
-        # Draw the data distribution
-        self.observable_settings['data_distribution'].SetMarkerSize(self.marker_size)
-        self.observable_settings['data_distribution'].SetMarkerStyle(self.data_marker)
-        self.observable_settings['data_distribution'].SetMarkerColor(self.data_color)
-        self.observable_settings['data_distribution'].SetLineStyle(self.line_style)
-        self.observable_settings['data_distribution'].SetLineWidth(self.line_width)
-        self.observable_settings['data_distribution'].SetLineColor(self.data_color)
-        self.observable_settings['data_distribution'].Draw('PE Z same')
-
-        # Add legend
-        legend = ROOT.TLegend(0.4, 0.75, 0.75, 0.85)
-        self.plot_utils.setup_legend(legend, 0.045, sep=0.001)
-        legend.AddEntry(self.observable_settings['data_distribution'], 'Data', 'PE')
-        legend.Draw()
-
-        # Add text annotations
-        pad1.cd()
-        text_latex = ROOT.TLatex()
-        text_latex.SetNDC()
-        text_latex.SetTextSize(0.065)
-        text = f'#bf{{{observable_type}_{observable}}} #sqrt{{#it{{s}}}} = {self.sqrts / 1000.} TeV'
-        text_latex.DrawLatex(0.25, 0.83, text)
-        text = f'{centrality} {self.suffix} {pt_suffix}'
-        text_latex.DrawLatex(0.25, 0.73, text)
-        if self.skip_pp:
-            text = 'skip data plot -- no pp data in HEPData'
-            text_latex.DrawLatex(0.25, 0.63, text)
-
-        # Save the canvas
-        hname = f'h_{observable_type}_{observable}{self.suffix}_{centrality}{pt_suffix}'
+        hname = f'h_{observable_type}_{observable}_{centrality}'
         c.SaveAs(os.path.join(self.output_dir, f'{hname}{self.file_format}'))
         c.Close()
 

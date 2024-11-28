@@ -71,7 +71,7 @@ soft_integrated:
     y_max_AA: 0.2
 
 
-pt_differential_flows:
+soft_differential:
   # https://www.hepdata.net/record/ins660793
   v2_SP_star:
     pt: [0., 6.]

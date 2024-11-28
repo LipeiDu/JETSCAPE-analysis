@@ -41,36 +41,33 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
         # Read config file
         with open(self.config_file, 'r') as stream:
-            config = yaml.safe_load(stream)
+            self.config = yaml.safe_load(stream)
 
-        self.debug_level = config['debug_level']
-        self.n_event_max = config['n_event_max']
-        self.reader_type = config['reader']
-        self.progress_bar = config['progress_bar']
-        self.merge_histograms = config['merge_histograms']
-        self.selected_pid = config['selected_pid']
-        self.write_Qn_vector_histograms = config['write_Qn_vector_histograms']
+        self.selected_pid = self.config['selected_pid']
 
-        # analysis parameters
-        self.eta_min = config['eta_min']
-        self.eta_max = config['eta_max']
-
-        self.eta_min_ref = config['eta_min_ref']
-        self.eta_max_ref = config['eta_max_ref']
-
-        self.pT_low = config['pT_low']
-        self.pT_high = config['pT_high']
-        self.npT = config['npT']
+        # centrality of the hydro event
+        self.centrality = [40, 50]
 
         # parameters of Qn vector writer in JETSCAPE
-        self.n_pt_bins = config['n_pt_bins']
-        self.pt_min = config['pt_min']
-        self.pt_max = config['pt_max']
-        self.n_y_bins = config['n_y_bins']
-        self.y_min = config['y_min']
-        self.y_max = config['y_max']
-        self.n_order = config['n_order']
-        self.n_oversample = config['n_oversample']
+        self.n_pt_bins = self.config['n_pt_bins']
+        self.pt_min = self.config['pt_min']
+        self.pt_max = self.config['pt_max']
+        self.n_y_bins = self.config['n_y_bins']
+        self.y_min = self.config['y_min']
+        self.y_max = self.config['y_max']
+        self.n_order = self.config['n_order']
+        self.n_oversample = self.config['n_oversample']
+
+        # pT arrays for interpolation in flow calculation
+        self.pT_low = self.config['pT_low']
+        self.pT_high = self.config['pT_high']
+        self.npT = self.config['npT']
+
+        # to be moved
+        self.eta_min_ref = self.config['eta_min_ref']
+        self.eta_max_ref = self.config['eta_max_ref']
+        self.eta_min = self.config['eta_min']
+        self.eta_max = self.config['eta_max']
 
     # ---------------------------------------------------------------
     # Main processing function
@@ -86,40 +83,57 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # Main processing function for events in a single event_QnVector.dat
     # ---------------------------------------------------------------
     def run_jetscape_analysis(self):
-        # Create reader class
+        # Preprocess Qn vectors for the predefined centrality
         all_events, total_events = self.reader_ascii(self.input_file)
-        print("total_events", total_events)
+        print(f"Total events in centrality {self.centrality}: {total_events}")
 
         # Open the ROOT file
         output_file = ROOT.TFile(self.output_file, "RECREATE")
 
-        # Create histograms
-        histograms = self.initialize_result_histograms(total_events, self.n_pt_bins, self.pt_min, self.pt_max)
-
-        # Iterate through events
+        # Shared Qn vector processing for all events
+        event_results = {}  # Store results for each event to reuse across observables
         for event_id, event in all_events.items():
-            print(f"Processing event_id: {event_id}, number of entries (N_pT times N_rapidity): {len(event)}")
+            print(f"Processing event_id: {event_id}, entries: {len(event)}")
 
-            # Initialize output objects
+            # Initialize Qn vector histograms
             self.initialize_qnvector_histogram(event_id)
-            
-            # Fill histogram
+
+            # Fill Qn vector histograms
             self.fill_qnvector_histogram(event)
 
-            # Process histogram data to calculate observables
-            dNdeta, mean_pt, psi_n_dict, pt_values, N_vn, vn_real_array, vn_imag_array, N_Qn_pT_array, Qn_pT_real_array, Qn_pT_imag_array, N_Qn_ref, Qn_ref_real_array, Qn_ref_imag_array = self.process_qnvector_histogram(event_id)
+            # Process Qn vector histograms to calculate observables
+            event_results[event_id] = self.process_qnvector_histogram(event_id)
 
-            # Clear histograms for memory efficiency
+            # Clear Qn vector histograms after processing
             self.clear_qnvector_histograms()
 
-            # Fill the results histograms
-            self.fill_result_histograms(histograms, event_id, dNdeta, mean_pt, psi_n_dict, pt_values, N_vn, vn_real_array, vn_imag_array, N_Qn_pT_array, Qn_pT_real_array, Qn_pT_imag_array, N_Qn_ref, Qn_ref_real_array, Qn_ref_imag_array)
+        # Obtain histograms of different observable types from Qn vector histograms
+        self.histogram_hadron_observables(total_events, event_results, observable_type = 'soft_integrated')
 
-        # Write histograms to file
-        self.write_result_histograms(histograms)
+        self.histogram_hadron_observables(total_events, event_results, observable_type = 'soft_differential')
 
         # Close the ROOT file
         output_file.Close()
+
+    def histogram_hadron_observables(self, total_events, event_results, observable_type=''):
+        print()
+        print(f'Histogram {observable_type} observables...')
+
+        for observable, block in self.config[observable_type].items():
+            for centrality_index, centrality in enumerate(block['centrality']):
+                # Skip if centrality does not match predefined centrality
+                if centrality != self.centrality:
+                    continue
+
+                # Initialize histograms for this observable
+                histograms = self.initialize_result_histograms(observable_type, observable, centrality, total_events, self.n_pt_bins, self.pt_min, self.pt_max)
+
+                # Fill the results histograms using precomputed event results
+                for event_id, results in event_results.items():
+                    self.fill_result_histograms(observable_type, observable, histograms, event_id, *results)
+
+                # Write histograms to file
+                self.write_result_histograms(histograms)        
 
     # ---------------------------------------------------------------
     # Initialize output objects for each event
@@ -315,7 +329,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
         # III. Calculate quantities for flow calculations
 
-        psi_n_dict = {}
+        psi_n_list = []
 
         # Calculate psi_n for each harmonic n
         for n in range(1, self.n_order):
@@ -325,7 +339,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
             # Calculate psi_n
             psi_n = (1.0 / n) * np.arctan2(vnsin_sum, vncos_sum)
-            psi_n_dict[n] = psi_n
+            psi_n_list.append(psi_n)
 
         # Ensure there are valid entries for interpolation
         if len(pt_values) == 0 or len(dN_values) == 0:
@@ -354,7 +368,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         N_Qn_pT, Qn_pT_real_array, Qn_pT_imag_array, N_Qn_ref, Qn_ref_real_array, Qn_ref_imag_array = self.calculate_diff_vn_single_event(pT_inte_array, pt_values, dN_values, vncos_values, vnsin_values, 
             pt_ref_values, dN_ref_values, vncos_ref_values, vnsin_ref_values)
 
-        return dNdeta, mean_pt, psi_n_dict, pt_values, N_vn, vn_real_array, vn_imag_array, N_Qn_pT, Qn_pT_real_array, Qn_pT_imag_array, N_Qn_ref, Qn_ref_real_array, Qn_ref_imag_array
+        return dNdeta, mean_pt, psi_n_list, pt_values, N_vn, vn_real_array, vn_imag_array, N_Qn_pT, Qn_pT_real_array, Qn_pT_imag_array, N_Qn_ref, Qn_ref_real_array, Qn_ref_imag_array
 
     # ---------------------------------------------------------------
     # Calculate vn for a single event
@@ -425,104 +439,85 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # ---------------------------------------------------------------
     # Calculate histograms for results
     # ---------------------------------------------------------------
-    def initialize_result_histograms(self, total_events, npT, pT_min, pT_max):
-        hist_dNdeta = ROOT.TH1F(f"hist_dNchdeta", f"charged multiplicity; Event ID; Nch", total_events, 1, total_events + 1)
-        hist_mean_pt = ROOT.TH1F(f"hist_mean_pT", f"mean pT; Event ID; mean_pT", total_events, 1, total_events + 1)
+    def initialize_result_histograms(self, observable_type, observable, centrality, total_events, npT, pT_min, pT_max):
+        base_name = f"h_{observable_type}_{observable}_{centrality}"
+        histograms = {}
 
-        hist_N_vn = ROOT.TH1F(f"hist_N_vn", f"hist_N_vn; Event ID; N_vn", total_events, 1, total_events + 1)
-        hist_N_Qn_pT = ROOT.TH2F(f"hist_N_Qn_pT", f"hist_N_Qn_pT; Event ID; pT; N_Qn_pT", total_events, 1, total_events + 1, npT, pT_min, pT_max)
-        hist_N_Qn_ref = ROOT.TH1F(f"hist_N_Qn_ref", f"hist_N_Qn_ref; Event ID; N_Qn_ref", total_events, 1, total_events + 1)
+        if observable_type == "soft_integrated":
+            if 'multiplicity' in observable:
+                histograms['hist_dNdeta'] = ROOT.TH1F(f"{base_name}_dNchdeta", "Multiplicity; Event ID; Nch", total_events, 1, total_events + 1)
 
-        hist_psi = {}
+            if 'mean_pt' in observable:
+                histograms['hist_mean_pt'] = ROOT.TH1F(f"{base_name}_mean_pT", f"mean pT; Event ID; mean_pT", total_events, 1, total_events + 1)
 
-        # integrated flows
-        hist_vn_real = {}
-        hist_vn_imag = {}
+            if 'v2' in observable:
+                histograms['hist_N_vn'] = ROOT.TH1F(f"{base_name}_N_vn", "N_vn; Event ID; N_vn", total_events, 1, total_events + 1)
+                histograms['hist_vn_real'] = {n: ROOT.TH1F(f"{base_name}_vn_real_n{n}", f"vn real (n={n}); Event ID; v{n}", total_events, 1, total_events + 1) for n in range(1, self.n_order)}
+                histograms['hist_vn_imag'] = {n: ROOT.TH1F(f"{base_name}_vn_imag_n{n}", f"vn imag (n={n}); Event ID; v{n}", total_events, 1, total_events + 1) for n in range(1, self.n_order)}
 
-        # pT different flows
-        hist_Qn_ref_real = {}
-        hist_Qn_ref_imag = {}
+        if observable_type == "soft_differential":
 
-        hist_Qn_pT_real = {}
-        hist_Qn_pT_imag = {}
+            histograms['hist_psi'] =  {n: ROOT.TH1F(f"{base_name}_psi_n{n}", f"Event Plane Angles (n={n}); Event ID; Psi_{n}", total_events, 1, total_events + 1) for n in range(1, self.n_order)}
 
-        for n in range(1, self.n_order):
-            hist_psi[n] = ROOT.TH1F(f"hist_psi_n{n}", f"Event Plane Angles (n={n}); Event ID; Psi_{n}", total_events, 1, total_events + 1)
+            if 'v2' in observable:
 
-            hist_vn_real[n] = ROOT.TH1F(f"hist_vn_real_n{n}", f"vn real (n={n}); Event ID; v{n}", total_events, 1, total_events + 1)
-            hist_vn_imag[n] = ROOT.TH1F(f"hist_vn_imag_n{n}", f"vn imag (n={n}); Event ID; v{n}", total_events, 1, total_events + 1)
-            
-            hist_Qn_ref_real[n] = ROOT.TH1F(f"hist_Qn_ref_real_n{n}", f"Qn ref real (n={n}); Event ID; Qn_ref", total_events, 1, total_events + 1)
-            hist_Qn_ref_imag[n] = ROOT.TH1F(f"hist_Qn_ref_imag_n{n}", f"Qn ref imag (n={n}); Event ID; Qn_ref", total_events, 1, total_events + 1)
+                histograms['hist_N_Qn_ref'] = ROOT.TH1F(f"{base_name}_N_Qn_ref", f"hist_N_Qn_ref; Event ID; N_Qn_ref", total_events, 1, total_events + 1)
+                histograms['hist_Qn_ref_real'] =  {n: ROOT.TH1F(f"{base_name}_Qn_ref_real_n{n}", f"Qn ref real (n={n}); Event ID; Qn_ref", total_events, 1, total_events + 1) for n in range(1, self.n_order)}
+                histograms['hist_Qn_ref_imag'] =  {n: ROOT.TH1F(f"{base_name}_Qn_ref_imag_n{n}", f"Qn ref imag (n={n}); Event ID; Qn_ref", total_events, 1, total_events + 1) for n in range(1, self.n_order)}
 
-            # 2D histogram for Qn_pT (pT vs Event ID)
-            hist_Qn_pT_real[n] = ROOT.TH2F(f"hist_Qn_pT_real_n{n}", f"Qn pT real (n={n}); Event ID; pT; Qn", total_events, 1, total_events + 1, npT, pT_min, pT_max)
-            hist_Qn_pT_imag[n] = ROOT.TH2F(f"hist_Qn_pT_imag_n{n}", f"Qn pT imag (n={n}); Event ID; pT; Qn", total_events, 1, total_events + 1, npT, pT_min, pT_max)    
+                histograms['hist_N_Qn_pT'] = ROOT.TH2F(f"{base_name}_N_Qn_pT", "N_Qn_pT; Event ID; pT; N_Qn_pT", total_events, 1, total_events + 1, npT, pT_min, pT_max)
+                histograms['hist_Qn_pT_real'] = {n: ROOT.TH2F(f"{base_name}_Qn_pT_real_n{n}", f"Qn pT real (n={n}); Event ID; pT; Qn", total_events, 1, total_events + 1, npT, pT_min, pT_max) for n in range(1, self.n_order)}
+                histograms['hist_Qn_pT_imag'] = {n: ROOT.TH2F(f"{base_name}_Qn_pT_imag_n{n}", f"Qn pT imag (n={n}); Event ID; pT; Qn", total_events, 1, total_events + 1, npT, pT_min, pT_max) for n in range(1, self.n_order)}
 
-        return {
-            'hist_dNdeta': hist_dNdeta,
-            'hist_mean_pt': hist_mean_pt,
-            'hist_psi': hist_psi,
-            'hist_vn_real': hist_vn_real,
-            'hist_vn_imag': hist_vn_imag,
-            'hist_N_vn': hist_N_vn,
-            'hist_Qn_pT_real': hist_Qn_pT_real,
-            'hist_Qn_pT_imag': hist_Qn_pT_imag,
-            'hist_N_Qn_pT': hist_N_Qn_pT,
-            'hist_Qn_ref_real': hist_Qn_ref_real,
-            'hist_Qn_ref_imag': hist_Qn_ref_imag,
-            'hist_N_Qn_ref': hist_N_Qn_ref,
-        }
+        return histograms
 
     # ---------------------------------------------------------------
     # Fill histograms of results
     # ---------------------------------------------------------------
-    def fill_result_histograms(self, histograms, event_id, dNdeta, mean_pt, psi_n_dict, pt_values, N_vn, vn_real_array, vn_imag_array, 
-        N_Qn_pT_array, Qn_pT_real_array, Qn_pT_imag_array, N_Qn_ref, Qn_ref_real_array, Qn_ref_imag_array):
-    
-        histograms['hist_dNdeta'].Fill(event_id, dNdeta)
-        histograms['hist_mean_pt'].Fill(event_id, mean_pt)
+    def fill_result_histograms(self, observable_type, observable, histograms, event_id, *results):
+        if observable_type == "soft_integrated":
+            if 'hist_dNdeta' in histograms:
+                histograms['hist_dNdeta'].Fill(event_id, results[0])  # dNdeta
 
-        # Fill N_vn, N_Qn_pT, and N_Qn_ref (shared across all harmonics n)
-        histograms['hist_N_vn'].Fill(event_id, N_vn)
-        histograms['hist_N_Qn_ref'].Fill(event_id, N_Qn_ref)
+            if 'hist_mean_pt' in histograms:
+                histograms['hist_mean_pt'].Fill(event_id, results[1])  # mean_pt
 
-        for i, N_Qn_pT in enumerate(N_Qn_pT_array):
-            histograms['hist_N_Qn_pT'].Fill(event_id, pt_values[i], N_Qn_pT)
+            if 'hist_N_vn' in histograms:
+                histograms['hist_N_vn'].Fill(event_id, results[4])  # N_vn
+                for n in range(1, self.n_order):
+                    histograms['hist_vn_real'][n].Fill(event_id, results[5][n - 1])  # vn_real_array
+                    histograms['hist_vn_imag'][n].Fill(event_id, results[6][n - 1])  # vn_imag_array
 
-        for n in range(1, self.n_order):
-            histograms['hist_psi'][n].Fill(event_id, psi_n_dict[n])
+        if observable_type == "soft_differential":
 
-            histograms['hist_vn_real'][n].Fill(event_id, float(vn_real_array[n - 1]))
-            histograms['hist_vn_imag'][n].Fill(event_id, float(vn_imag_array[n - 1]))
+            if 'hist_psi' in histograms:
+                for n in range(1, self.n_order):
+                    histograms['hist_psi'][n].Fill(event_id, float(results[2][n - 1]))
 
-            # Fill the 2D histogram for each pT value
-            for i, qn_pT_real in enumerate(Qn_pT_real_array[n - 1]):
-                histograms['hist_Qn_pT_real'][n].Fill(event_id, pt_values[i], float(qn_pT_real))
-            for i, qn_pT_imag in enumerate(Qn_pT_imag_array[n - 1]):
-                histograms['hist_Qn_pT_imag'][n].Fill(event_id, pt_values[i], float(qn_pT_imag))
+            if 'hist_N_Qn_pT' in histograms:
+                histograms['hist_N_Qn_ref'].Fill(event_id, results[10])
 
-            histograms['hist_Qn_ref_real'][n].Fill(event_id, float(Qn_ref_real_array[n - 1]))
-            histograms['hist_Qn_ref_imag'][n].Fill(event_id, float(Qn_ref_imag_array[n - 1]))
+                for i, N_Qn_pT in enumerate(results[7]):
+                    histograms['hist_N_Qn_pT'].Fill(event_id, results[3][i], N_Qn_pT)  # N_Qn_pT_array and pt_values
+                for n in range(1, self.n_order):
+                    histograms['hist_Qn_ref_real'][n].Fill(event_id, float(results[11][n - 1]))
+                    histograms['hist_Qn_ref_imag'][n].Fill(event_id, float(results[12][n - 1]))
+
+                    for i, qn_pT_real in enumerate(results[8][n - 1]):
+                        histograms['hist_Qn_pT_real'][n].Fill(event_id, results[3][i], qn_pT_real)  # Qn_pT_real_array
+                    for i, qn_pT_imag in enumerate(results[9][n - 1]):
+                        histograms['hist_Qn_pT_imag'][n].Fill(event_id, results[3][i], qn_pT_imag)  # Qn_pT_imag_array
 
     # ---------------------------------------------------------------
     # Write histograms of results
     # ---------------------------------------------------------------
     def write_result_histograms(self, histograms):
-        histograms['hist_dNdeta'].Write()
-        histograms['hist_mean_pt'].Write()
-        histograms['hist_N_vn'].Write()
-        histograms['hist_N_Qn_ref'].Write()
-        histograms['hist_N_Qn_pT'].Write()
-
-        for n in range(1, self.n_order):
-            histograms['hist_psi'][n].Write()
-            histograms['hist_vn_real'][n].Write()
-            histograms['hist_vn_imag'][n].Write()
-            histograms['hist_Qn_pT_real'][n].Write()
-            histograms['hist_Qn_pT_imag'][n].Write()
-            histograms['hist_Qn_ref_real'][n].Write()
-            histograms['hist_Qn_ref_imag'][n].Write()
+        for key, hist in histograms.items():
+            if isinstance(hist, dict):
+                for subkey, subhist in hist.items():
+                    subhist.Write()
+            else:
+                hist.Write()
 
     # ---------------------------------------------------------------
     # Reader of the Qn vector file

@@ -7,23 +7,7 @@ debug_level: 0
 xml_user_file: '/home/jetscape-user/JETSCAPE/config/jetscape_user_AA_2011.01430.xml'
 xml_master_file: '/home/jetscape-user/JETSCAPE/config/jetscape_main.xml'
 
-# Analysis parameters -- required
-n_event_max: 1000
-reader: ascii
-progress_bar: True
-merge_histograms: True
-write_Qn_vector_histograms: True
-
-# Analysis parameters -- user-defined
-eta_min: -0.5
-eta_max: 0.5
-
-# pT range for flow analysis
-pT_low: 0.05
-pT_high: 5.8
-npT: 50
-
-# these parameters are used in Qn vector writer; they have to be consistent
+# these parameters are used in Qn vector writer; they have to be consistent with JETSCAPE
 n_pt_bins: 30
 pt_min: 0.
 pt_max: 6.
@@ -31,42 +15,89 @@ n_y_bins: 80
 y_min: -4
 y_max: 4
 n_order: 7 # the maximum n is n_order-1
-n_oversample: 20 # number of oversamples in each event
+n_oversample: 10 # number of oversamples in each event
 
-selected_pid: [9999]
+selected_pid: [9999] # here only charged particles are considered
 
-multiplicity:
-  centrality: [[0,2.5], [2.5, 5], [5, 7.5], [7.5, 10], [10,20], [20,30], [30,40], [40,50]]
-  xtitle: 'centrality'
-  logy: False
+# pT bins for interpolation in flow analysis
+pT_low: 0.2
+pT_high: 3.0
+npT: 50
 
-  hepdata: 'HEPData-ins1410589-v1-root.root'
+# to be moved
+eta_min_ref: 2.8
+eta_max_ref: 5.1
 
-  hepdata_AA_dir: 'Table 2'
-  hepdata_AA_gname: ['Graph1D_y1']
-  hepdata_AA_hname: ['Hist1D_y1']
-  ytitle_AA: '#it{dN}_{ch}/deta'
+eta_min: -0.5
+eta_max: 0.5
 
-pt_differential_flows:
+soft_integrated:
+  # https://www.hepdata.net/record/ins1410589
+  # checked; LDU
+  multiplicity:
+    # centrality: [[0,2.5], [2.5, 5], [5, 7.5], [7.5, 10], [10,20], [20,30], [30,40], [40,50], [50,60], [60,70], [70,80]]
+    centrality: [[40,50]]
+    xtitle: 'centrality'
+    logy: False
+
+    eta_cut: 0.5 # since we calculate dNch/deta, not very sensitive to eta_cut, we set it to be the same as the one used in flow calculation in the code
+
+    hepdata: 'HEPData-ins1410589-v1-root.root'
+
+    hepdata_AA_dir: 'Table 2'
+    hepdata_AA_gname: ['Graph1D_y1']
+    hepdata_AA_hname: ['Hist1D_y1']
+    ytitle_AA: '#it{dN}_{ch}/deta'
+
+  v2_four_alice:
+    # https://www.hepdata.net/record/ins1666817
+    # checked; LDU
+    centrality: [[40,50]]
+    xtitle: 'centrality'
+
+    eta_cut: 0.8
+
+    pt_min: 0.2
+    pt_max: 3.0
+
+    hepdata: 'HEPData-ins1666817-v1-root.root'
+    hepdata_AA_dir: ['Table 2']
+    hepdata_AA_gname: 'Graph1D_y1'
+    hepdata_AA_hname: 'Hist1D_y1'
+    ytitle_AA: 'v24'
+
+
+soft_differential:
+  # https://www.hepdata.net/record/ins1666817
+  # checked; LDU
   v2_SP_alice:
     pt: [0., 140.]
-    centrality: [[0,5]]
+    centrality: [[40,50]]
     xtitle: '#it{p}_{T,jet} (GeV/#it{c})'
     logy: False
 
+    eta_cut: 0.8
+
+    eta_min_ref: 2.8
+    eta_max_ref: 5.1
+
     hepdata: 'HEPData-ins1666817-v1-root.root'
-    hepdata_AA_dir: ['Table 15']
+    hepdata_AA_dir: ['Table 119']
     hepdata_AA_gname: 'Graph1D_y1'
     hepdata_AA_hname: 'Hist1D_y1'
     ytitle_AA: 'v_{2}'
     y_min_AA: 0.
     y_max_AA: 1.9
 
-  v2_four_cumulant_alice:
+  # https://www.hepdata.net/record/ins1666817
+  # checked; LDU
+  v2_four_alice:
     pt: [0., 140.]
     centrality: [[40,50]]
     xtitle: '#it{p}_{T,jet} (GeV/#it{c})'
     logy: False
+
+    eta_cut: 0.8
 
     hepdata: 'HEPData-ins1666817-v1-root.root'
     hepdata_AA_dir: ['Table 71']
