@@ -54,6 +54,8 @@ class HistogramResults(common_base.CommonBase):
         self.power = self.config['power']
         self.pt_ref = self.config['pt_ref']
 
+        self.norder = self.config['norder']
+
         # If AA, set different options for hole subtraction treatment
         if self.is_AA:
             self.jet_collection_labels = self.config['jet_collection_labels']
@@ -252,6 +254,20 @@ class HistogramResults(common_base.CommonBase):
         print()
         print(f'Histogram {observable_type} observables...')
 
+        def compute_h_total_NpT(column_name, centrality, bins, compute_total_NpT_only=True):
+            """
+            Helper function to compute h_total_NpT if not already done.
+            """
+            h_total_NpT_name = f'h_{column_name}_NpT_{centrality}'
+            if not any(h.GetName() == h_total_NpT_name for h in self.output_list):
+                self.histogram_observable(
+                    column_name=column_name,
+                    bins=bins,
+                    centrality=centrality,
+                    compute_total_NpT_only=compute_total_NpT_only,
+                )
+            return h_total_NpT_name
+
         for observable, block in self.config[observable_type].items():
             if "v2" in observable:
                 for method, method_block in block.items():
@@ -265,10 +281,32 @@ class HistogramResults(common_base.CommonBase):
                         if not bins.any():
                             continue
 
-                        # Histogram observable for method-specific column names
-                        self.histogram_observable(column_name=f'{observable_type}_{observable}_{method}', bins=bins, centrality=centrality)
+                        # Compute h_total_NpT for the main data
+                        total_NpT_column = f'{observable_type}_{observable}_{method}_Qn0_total'
+                        h_total_NpT_name = compute_h_total_NpT(total_NpT_column, centrality, bins)
+
+                        # Compute h_total_NpT for holes if in AA mode
                         if self.is_AA:
-                            self.histogram_observable(column_name=f'{observable_type}_{observable}_{method}_holes', bins=bins, centrality=centrality)
+                            total_NpT_holes_column = f'{observable_type}_{observable}_{method}_Qn0_total_holes'
+                            h_total_NpT_holes_name = compute_h_total_NpT(total_NpT_holes_column, centrality, bins)
+
+                        # Loop over harmonics n
+                        for n in range(1, self.norder):
+                            # Handle both real and imaginary components
+                            for component in ['real', 'img']:
+                                self.histogram_observable(
+                                    column_name=f'{observable_type}_{observable}_{method}_Qn{n}_{component}',
+                                    bins=bins,
+                                    centrality=centrality,
+                                    h_total_NpT_name=h_total_NpT_name,  # Pass precomputed h_total_NpT
+                                )
+                                if self.is_AA:
+                                    self.histogram_observable(
+                                        column_name=f'{observable_type}_{observable}_{method}_Qn{n}_{component}_holes',
+                                        bins=bins,
+                                        centrality=centrality,
+                                        h_total_NpT_name=h_total_NpT_holes_name,  # Pass precomputed h_total_NpT for holes
+                                    )
 
             # Handle dihadron_star separately (no methods loop)
             # STAR dihadron
@@ -512,7 +550,8 @@ class HistogramResults(common_base.CommonBase):
     # Histogram a single observable
     #-------------------------------------------------------------------------------------------
     def histogram_observable(self, column_name=None, bins=None, centrality=None, pt_suffix='',
-                             pt_bin=None, block=None, observable=''):
+                             pt_bin=None, block=None, observable='', 
+                             compute_total_NpT_only=False, h_total_NpT_name=None):
 
         # Check if event centrality is within observable centrality bin
         if not self.centrality_accepted(centrality):
@@ -535,7 +574,8 @@ class HistogramResults(common_base.CommonBase):
         if dim_observable == 1:
             self.histogram_1d_observable(col, column_name=column_name, bins=bins, centrality=centrality, pt_suffix=pt_suffix, observable=observable)
         elif dim_observable == 2:
-            self.histogram_2d_observable(col, column_name=column_name, bins=bins, centrality=centrality, pt_suffix=pt_suffix, block=block)
+            self.histogram_2d_observable(col, column_name=column_name, bins=bins, centrality=centrality, pt_suffix=pt_suffix, block=block, 
+                compute_total_NpT_only=compute_total_NpT_only, h_total_NpT_name=h_total_NpT_name)
         else:
             return
 
@@ -581,38 +621,73 @@ class HistogramResults(common_base.CommonBase):
     #-------------------------------------------------------------------------------------------
     # Histogram a single observable
     #-------------------------------------------------------------------------------------------
-    def histogram_2d_observable(self, col, column_name=None, bins=None, centrality=None, pt_suffix='', block=None):
+    def histogram_2d_observable(self, col, column_name=None, bins=None, centrality=None, pt_suffix='', block=None, 
+                compute_total_NpT_only=False, h_total_NpT_name=None):
 
-        # The histogram name includes the method passed in column_name (e.g., "ep" or "sp") for the case of v2
-        # e.g. column_name=f'{observable_type}_{observable}_{method}'
+        # Check if the observable is v2-related
+        if "hadron_correlations_v2" in column_name or "dijet_v2" in column_name:
+            # Create and normalize histograms for Qn vector components (real or imaginary)
+            # or calculate total_NpT only if compute_total_NpT_only is True.
+
+            h_total_NpT = None
+
+            # Case 1: Compute total_NpT only
+            if compute_total_NpT_only:
+                h_total_NpT_name = f'h_{column_name}_NpT_{centrality}'
+                h_total_NpT = ROOT.TH1F(h_total_NpT_name, h_total_NpT_name, len(bins) - 1, bins)
+                h_total_NpT.Sumw2()
+
+                # Fill the total_NpT histogram
+                for i, particle_data in enumerate(col):
+                    if particle_data is not None:
+                        for value in particle_data:
+                            pt = value[0]  # pT value
+                            h_total_NpT.Fill(pt, 1)  # Increment particle count
+
+                # Append the total_NpT histogram to the output list
+                if h_total_NpT_name not in [h.GetName() for h in self.output_list]:
+                    self.output_list.append(h_total_NpT)
+
+                return
+
+            # Case 2: Normalize Qn vectors using precomputed total_NpT
+            # Fetch the precomputed h_total_NpT
+            if h_total_NpT_name:
+                h_total_NpT = next((h for h in self.output_list if h.GetName() == h_total_NpT_name), None)
+            if not h_total_NpT:
+                raise ValueError(f"h_total_NpT histogram '{h_total_NpT_name}' not found in output list.")
+
+            # Define histogram names
+            hname = f'h_{column_name}_{centrality}'
+            # Create the Qn component histogram
+            h_vn_component = ROOT.TH1F(hname, hname, len(bins) - 1, bins)
+            h_vn_component.Sumw2()
+
+            # Fill the component histogram
+            for i, particle_data in enumerate(col):
+                if particle_data is not None:
+                    for value in particle_data:
+                        pt = value[0]  # pT value
+                        component = value[1]  # Real or imaginary component
+                        h_vn_component.Fill(pt, component)
+
+            # Normalize the component histogram by total_NpT
+            for ibin in range(1, h_total_NpT.GetNbinsX() + 1):
+                total_NpT = h_total_NpT.GetBinContent(ibin)
+                if total_NpT > 0:
+                    h_vn_component.SetBinContent(ibin, h_vn_component.GetBinContent(ibin) / total_NpT)
+                else:
+                    h_vn_component.SetBinContent(ibin, 0)
+
+            # Append the normalized histogram to the output list
+            self.output_list.append(h_vn_component)
+
+            return
+
+        # Non-v2 variables
         hname = f'h_{column_name}_{centrality}{pt_suffix}'
         h = ROOT.TH1F(hname, hname, len(bins)-1, bins)
         h.Sumw2()
-
-        # Check if the observable is v2-related
-        if "hadron_correlations_v2" in hname or "dijet_v2" in hname:
-            # Create numerator for the specified method
-            hname_num = f'h_{column_name}_num_{centrality}{pt_suffix}'
-            h_num = ROOT.TH1F(hname_num, hname_num, len(bins)-1, bins)
-            h_num.Sumw2()
-
-            # Fill histograms
-            for i, _ in enumerate(col):
-                if col[i] is not None:
-                    for value in col[i]:
-                        # Fill the denominator
-                        h.Fill(value[0], self.weights[i])
-
-                        # Fill the numerator based on the calculation method in column_name
-                        if '_ep' in column_name:
-                            h_num.Fill(value[0], self.weights[i] * value[1])
-                        elif '_sp' in column_name:
-                            h_num.Fill(value[0], self.weights[i] * self.soft_particle_v2[i] * value[1])
-
-            # Append histograms to the output list
-            self.output_list.append(h)    # Denominator
-            self.output_list.append(h_num)  # Method-specific numerator
-            return
 
         # Get pt bin
         pt_index = int(pt_suffix[-1])

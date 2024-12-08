@@ -84,6 +84,8 @@ class AnalyzeJetscapeEvents_STAT(analyze_events_base_STAT.AnalyzeJetscapeEvents_
             self.output_file = _input_filename.replace("final_state_hadrons", self.output_file)
             #print(f'Updated output_file name to "{self.output_file}" in order to add identifying indices.')
 
+        self.norder = config['norder']
+        
         # Load observable blocks
         self.hadron_observables = config['hadron']
         self.hadron_correlation_observables = config['hadron_correlations']
@@ -280,16 +282,15 @@ class AnalyzeJetscapeEvents_STAT(analyze_events_base_STAT.AnalyzeJetscapeEvents_
             pid = pid_hadrons[np.abs(particle.user_index())-1]
             pt = particle.pt()
             eta = particle.eta()
-            CosineDPhi = np.cos(2.0*(particle.phi() - event_plane_angle))
-
+            
             if self.sqrts in [5020]:
                 # Charged hadrons (e-, mu-, pi+, K+, p+, Sigma+, Sigma-, Xi-, Omega-)
 
                 # Loop through observables in hadron_correlation_observables
-                for observable, methods_dict in self.hadron_correlation_observables.items():
+                for observable, block in self.hadron_correlation_observables.items():
                     if "v2" in observable:
                         # Loop through methods within each observable; methods such as EP or SP
-                        for method, method_block in methods_dict.items():
+                        for method, method_block in block.items():
                             if self.centrality_accepted(method_block['centrality']):
                                 pt_min = method_block['pt'][0]
                                 pt_max = method_block['pt'][1]
@@ -297,8 +298,18 @@ class AnalyzeJetscapeEvents_STAT(analyze_events_base_STAT.AnalyzeJetscapeEvents_
 
                                 if pt_min < pt < pt_max and abs(eta) < eta_cut:
                                     if abs(pid) in [11, 13, 211, 321, 2212, 3222, 3112, 3312, 3334]:
-                                        # Add the observable and method to the key in observable_dict_event
-                                        self.observable_dict_event[f'hadron_correlations_{observable}_{method}{suffix}'].append([pt, CosineDPhi])
+
+                                        # Handle n = 0 for particle count
+                                        self.observable_dict_event[f'hadron_correlations_{observable}_{method}_Qn0_total{suffix}'].append([pt, 1])
+
+                                        # Loop over harmonics n >=1
+                                        for n in range(1, self.norder):
+                                            cosnphi = np.cos(n * particle.phi())
+                                            sinnphi = np.sin(n * particle.phi())
+
+                                            # Append to the corresponding keys
+                                            self.observable_dict_event[f'hadron_correlations_{observable}_{method}_Qn{n}_real{suffix}'].append([pt, cosnphi])
+                                            self.observable_dict_event[f'hadron_correlations_{observable}_{method}_Qn{n}_img{suffix}'].append([pt, sinnphi])
 
         # NOTE: The loop order here is different than other functions because without some optimization,
         #       it's very easy to have an O(n^2) loop looking for trigger and associated particles.
@@ -1344,10 +1355,10 @@ class AnalyzeJetscapeEvents_STAT(analyze_events_base_STAT.AnalyzeJetscapeEvents_
             # for hadron correlation, a suffix label is used, separating holes; LDU
 
             # Loop through observables in dijet category
-            for observable, methods_dict in self.dijet_observables.items():
+            for observable, block in self.dijet_observables.items():
                 if "v2" in observable:
                     # Loop through methods within each observable
-                    for method, method_block in methods_dict.items():
+                    for method, method_block in block.items():
                         if self.centrality_accepted(method_block['centrality']):
                             pt_min = method_block['pt'][0]
                             pt_max = method_block['pt'][-1]
