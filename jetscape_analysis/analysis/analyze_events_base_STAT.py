@@ -77,8 +77,8 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
             run_info_path = _final_state_hadrons_path.parent / f"{_run_number}_info.yaml"
             with open(run_info_path, 'r') as f:
                 _run_info = yaml.safe_load(f)
-                centrality_string = ['cent', '00', '01']#_run_info["index_to_hydro_event"][_file_index].split('/')[0].split('_')
-                # centrality_string = _run_info["index_to_hydro_event"][_file_index].split('/')[0].split('_')
+                # centrality_string = ['cent', '00', '01']#_run_info["index_to_hydro_event"][_file_index].split('/')[0].split('_')
+                centrality_string = _run_info["index_to_hydro_event"][_file_index].split('/')[0].split('_')
                 # index of 1 and 2 based on an example entry of "cent_00_01"
                 self.centrality = [int(centrality_string[1]), int(centrality_string[2])]
 
@@ -257,6 +257,9 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
     # ---------------------------------------------------------------
     def fill_fastjet_constituents(self, event, select_status=None, select_charged=False):
 
+        # Replace any instance of 27 in event['status'] with 0 (positive status)
+        event['status'] = np.where(event['status'] == 27, 0, event['status'])
+        
         # Construct indices according to particle status
         if select_status == '-':
             status_mask = (event['status'] < 0)
