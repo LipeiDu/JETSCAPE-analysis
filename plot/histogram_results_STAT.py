@@ -293,7 +293,7 @@ class HistogramResults(common_base.CommonBase):
                         # Loop over harmonics n
                         for n in range(1, self.norder):
                             # Handle both real and imaginary components
-                            for component in ['real', 'img']:
+                            for component in ['real', 'imag']:
                                 self.histogram_observable(
                                     column_name=f'{observable_type}_{observable}_{method}_Qn{n}_{component}',
                                     bins=bins,
@@ -660,8 +660,8 @@ class HistogramResults(common_base.CommonBase):
             # Define histogram names
             hname = f'h_{column_name}_{centrality}'
             # Create the Qn component histogram
-            h_vn_component = ROOT.TH1F(hname, hname, len(bins) - 1, bins)
-            h_vn_component.Sumw2()
+            h_Qn_component = ROOT.TH1F(hname, hname, len(bins) - 1, bins)
+            h_Qn_component.Sumw2()
 
             # Fill the component histogram
             for i, particle_data in enumerate(col):
@@ -669,18 +669,10 @@ class HistogramResults(common_base.CommonBase):
                     for value in particle_data:
                         pt = value[0]  # pT value
                         component = value[1]  # Real or imaginary component
-                        h_vn_component.Fill(pt, component)
-
-            # Normalize the component histogram by total_NpT
-            for ibin in range(1, h_total_NpT.GetNbinsX() + 1):
-                total_NpT = h_total_NpT.GetBinContent(ibin)
-                if total_NpT > 0:
-                    h_vn_component.SetBinContent(ibin, h_vn_component.GetBinContent(ibin) / total_NpT)
-                else:
-                    h_vn_component.SetBinContent(ibin, 0)
+                        h_Qn_component.Fill(pt, component)
 
             # Append the normalized histogram to the output list
-            self.output_list.append(h_vn_component)
+            self.output_list.append(h_Qn_component)
 
             return
 

@@ -309,7 +309,7 @@ class AnalyzeJetscapeEvents_STAT(analyze_events_base_STAT.AnalyzeJetscapeEvents_
 
                                             # Append to the corresponding keys
                                             self.observable_dict_event[f'hadron_correlations_{observable}_{method}_Qn{n}_real{suffix}'].append([pt, cosnphi])
-                                            self.observable_dict_event[f'hadron_correlations_{observable}_{method}_Qn{n}_img{suffix}'].append([pt, sinnphi])
+                                            self.observable_dict_event[f'hadron_correlations_{observable}_{method}_Qn{n}_imag{suffix}'].append([pt, sinnphi])
 
         # NOTE: The loop order here is different than other functions because without some optimization,
         #       it's very easy to have an O(n^2) loop looking for trigger and associated particles.

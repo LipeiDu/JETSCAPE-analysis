@@ -79,6 +79,9 @@ class PlotResults(common_base.CommonBase):
         self.power = self.config['power']
         self.pt_ref = self.config['pt_ref']
 
+        self.ref_input_file = ROOT.TFile('/home/jetscape-user/JETSCAPE-STAT-output/jetscape_user_5020_40_50_jet/jetscape_PbPb_Run0202_5020_0000_QnVector.root', 'READ')
+        self.norder = self.config['norder']
+
         # If AA, set different options for hole subtraction treatment
         self.jet_collection_labels_AA = self.config['jet_collection_labels'] # + ['_shower_recoil_unsubtracted']
         self.jet_collection_label_pp = ''
@@ -169,8 +172,8 @@ class PlotResults(common_base.CommonBase):
                         self.suffix = ''
 
                         # Initialize and plot the observable for each method
-                        self.init_observable(observable_type, observable, method_block, centrality, centrality_index, method=f'_{method}')
-                        self.plot_observable(observable_type, observable, centrality, method=f'_{method}')
+                        self.init_observable(observable_type, observable, method_block, centrality, centrality_index, method=f'{method}')
+                        self.plot_observable(observable_type, observable, centrality, method=f'{method}')
 
             # Handle dihadron_star separately (no methods loop)
             elif observable == 'dihadron_star':
@@ -214,10 +217,10 @@ class PlotResults(common_base.CommonBase):
                                 continue
 
                             # Initialize observable configuration
-                            self.init_observable(observable_type, observable, method_block, centrality, centrality_index, method=f'_{method}', self_normalize=False)
+                            self.init_observable(observable_type, observable, method_block, centrality, centrality_index, method=f'{method}', self_normalize=False)
 
                             # Plot observable
-                            self.plot_observable(observable_type, observable, centrality, method=f'_{method}')
+                            self.plot_observable(observable_type, observable, centrality, method=f'{method}')
 
 
             else: # non-v2 observables
@@ -481,11 +484,43 @@ class PlotResults(common_base.CommonBase):
                                          collection_label=hole_label, pt_suffix=pt_suffix, self_normalize=self_normalize)
 
                 # Subtract the holes (and save unsubtracted histogram)
-                if self.observable_settings[f'jetscape_distribution']:
-                    self.observable_settings['jetscape_distribution_unsubtracted'] = self.observable_settings[f'jetscape_distribution'].Clone()
-                    self.observable_settings['jetscape_distribution_unsubtracted'].SetName('{}_unsubtracted'.format(self.observable_settings[f'jetscape_distribution'].GetName()))
+                # Handle nested dictionary for v2 histograms
+                if observable_type in ['hadron_correlations', 'dijet'] and 'v2' in observable:
+                    self.observable_settings['jetscape_distribution_unsubtracted'] = {}
+                    # Save unsubtracted h_N_pT
+                    if self.observable_settings['jetscape_distribution']['h_N_pT']:
+                        self.observable_settings['jetscape_distribution_unsubtracted']['h_N_pT'] = self.observable_settings['jetscape_distribution']['h_N_pT'].Clone()
+                        self.observable_settings['jetscape_distribution_unsubtracted']['h_N_pT'].SetName(
+                            f"{self.observable_settings['jetscape_distribution']['h_N_pT'].GetName()}_unsubtracted"
+                        )
+
+                    # Subtract h_N_pT
                     if self.observable_settings['jetscape_distribution_holes']:
-                        self.observable_settings['jetscape_distribution'].Add(self.observable_settings['jetscape_distribution_holes'], -1)
+                        if self.observable_settings['jetscape_distribution']['h_N_pT'] and self.observable_settings['jetscape_distribution_holes']['h_N_pT']:
+                            self.observable_settings['jetscape_distribution']['h_N_pT'].Add(self.observable_settings['jetscape_distribution_holes']['h_N_pT'], -1)
+
+                    # Save and subtract Qn vector components
+                    for n in range(1, self.norder):
+                        for component in ['real', 'imag']:
+                            key = f'h_Qn{n}_{component}'
+                            if self.observable_settings['jetscape_distribution'][key]:
+                                # Save unsubtracted version
+                                self.observable_settings['jetscape_distribution_unsubtracted'][key] = self.observable_settings['jetscape_distribution'][key].Clone()
+                                self.observable_settings['jetscape_distribution_unsubtracted'][key].SetName(
+                                    f"{self.observable_settings['jetscape_distribution'][key].GetName()}_unsubtracted"
+                                )
+                            # Subtract holes
+                            if self.observable_settings['jetscape_distribution_holes']:
+                                if self.observable_settings['jetscape_distribution'][key] and self.observable_settings['jetscape_distribution_holes'][key]:
+                                    self.observable_settings['jetscape_distribution'][key].Add(self.observable_settings['jetscape_distribution_holes'][key], -1)
+
+                # for all other observables, self.observable_settings[f'jetscape_distribution' is a single histogram object
+                else:
+                    if self.observable_settings[f'jetscape_distribution']:
+                        self.observable_settings['jetscape_distribution_unsubtracted'] = self.observable_settings[f'jetscape_distribution'].Clone()
+                        self.observable_settings['jetscape_distribution_unsubtracted'].SetName(f"{self.observable_settings['jetscape_distribution'].GetName()}_unsubtracted")
+                        if self.observable_settings['jetscape_distribution_holes']:
+                            self.observable_settings['jetscape_distribution'].Add(self.observable_settings['jetscape_distribution_holes'], -1)
 
                 # Perform any additional manipulations on scaled histograms
                 self.post_process_histogram(observable_type, observable, block, centrality, centrality_index, method)
@@ -524,11 +559,14 @@ class PlotResults(common_base.CommonBase):
         if 'semi_inclusive' in observable_type:
             self.construct_semi_inclusive_histogram(keys, observable_type, observable, centrality, collection_label=collection_label)
 
+        elif observable_type in ['hadron_correlations', 'dijet'] and 'v2' in observable:
+            self.construct_flow_vector_histograms(keys, observable_type, observable, centrality, method, collection_label=collection_label)
+
         # For all other histograms, get the histogram directly
         else:
 
             # Get histogram
-            self.hname = f'h_{observable_type}_{observable}{method}{self.suffix}{collection_label}_{centrality}{pt_suffix}'
+            self.hname = f'h_{observable_type}_{observable}_{method}{self.suffix}{collection_label}_{centrality}{pt_suffix}'
             if self.hname in keys:
                 h_jetscape = self.input_file.Get(self.hname)
                 h_jetscape.SetDirectory(0)
@@ -538,6 +576,61 @@ class PlotResults(common_base.CommonBase):
             else:
                 h_jetscape = None
             self.observable_settings[f'jetscape_distribution{collection_label}'] = h_jetscape
+
+    #-------------------------------------------------------------------------------------------
+    # Construct all histograms required for v2 calculation.
+    #-------------------------------------------------------------------------------------------
+    def construct_flow_vector_histograms(self, keys, observable_type, observable, centrality, method, collection_label=''):
+        """
+        Populates self.observable_settings with:
+          - h_N_pT: Particle count histogram.
+          - h_Qn_component: Real and imaginary Qn histograms for each harmonic.
+          - Qnref: Reference flow vector histograms.
+        """
+
+        # Initialize storage for this collection_label
+        self.observable_settings[f'jetscape_distribution{collection_label}'] = {}
+
+        # Fetch particle count histogram (Qn0 total)
+        h_N_pT_name = f'h_{observable_type}_{observable}_{method}_Qn0_total{collection_label}_NpT_{centrality}'
+        if h_N_pT_name in keys:
+            h_N_pT = self.input_file.Get(h_N_pT_name)
+            h_N_pT.SetDirectory(0)
+            h_N_pT.Sumw2()
+            self.observable_settings[f'jetscape_distribution{collection_label}']['h_N_pT'] = h_N_pT
+
+        # Fetch Qn component histograms for each harmonic (real and imaginary)
+        for n in range(1, self.norder):
+            for component in ['real', 'imag']:
+                hname = f'h_{observable_type}_{observable}_{method}_Qn{n}_{component}{collection_label}_{centrality}'
+                if hname in keys:
+                    h_Qn_component = self.input_file.Get(hname)
+                    h_Qn_component.SetDirectory(0)
+                    h_Qn_component.Sumw2()
+                    self.observable_settings[f'jetscape_distribution{collection_label}'][f'h_Qn{n}_{component}'] = h_Qn_component
+
+        # Fetch reference flow vector histograms (shared across hole labels)
+        # Avoid redundant retrieval for reference histograms
+        if 'Qn_ref' not in self.observable_settings:
+            base_name = f"h_{observable_type}_{observable}_{centrality}"
+
+            self.observable_settings['jetscape_distribution']['h_N_ref'] = self.ref_input_file.Get(f"{base_name}_N_Qn_ref")
+            self.observable_settings['jetscape_distribution']['h_Qn_ref_real'] = {}
+            self.observable_settings['jetscape_distribution']['h_Qn_ref_imag'] = {}
+
+            for n in range(1, self.norder): 
+                real_name_ref = f"{base_name}_Qn_ref_real_n{n}"
+                imag_name_ref = f"{base_name}_Qn_ref_imag_n{n}"
+                h_real_ref = self.ref_input_file.Get(real_name_ref)
+                h_imag_ref = self.ref_input_file.Get(imag_name_ref)
+                if h_real_ref:
+                    h_real_ref.SetDirectory(0)
+                    h_real_ref.Sumw2()
+                if h_imag_ref:
+                    h_imag_ref.SetDirectory(0)
+                    h_imag_ref.Sumw2()
+                self.observable_settings['jetscape_distribution']['h_Qn_ref_real'][n] = h_real_ref
+                self.observable_settings['jetscape_distribution']['h_Qn_ref_imag'][n] = h_imag_ref
 
     #-------------------------------------------------------------------------------------------
     # Construct semi-inclusive observables from difference of histograms
@@ -773,8 +866,8 @@ class PlotResults(common_base.CommonBase):
 
             h = self.observable_settings[f'jetscape_distribution{collection_label}']
             if h:
-                h_num_name = f'h_{observable_type}_{observable}{method}{self.suffix}{collection_label}_num_{centrality}'
-                h_denom_name = f'h_{observable_type}_{observable}{method}{self.suffix}{collection_label}_{centrality}'
+                h_num_name = f'h_{observable_type}_{observable}_{method}{self.suffix}{collection_label}_num_{centrality}'
+                h_denom_name = f'h_{observable_type}_{observable}_{method}{self.suffix}{collection_label}_{centrality}'
 
                 self.observable_settings[f'jetscape_distribution{collection_label}'] = self.input_file.Get(h_num_name).Clone()
 
@@ -788,37 +881,126 @@ class PlotResults(common_base.CommonBase):
 
                     self.observable_settings[f'jetscape_distribution{collection_label}'].SetBinContent(i, h_num_i/h_denom_i)
 
-                self.observable_settings[f'jetscape_distribution{collection_label}'].SetName(f'jetscape_distribution_{observable_type}_{observable}{method}_{centrality}')
+                self.observable_settings[f'jetscape_distribution{collection_label}'].SetName(f'jetscape_distribution_{observable_type}_{observable}_{method}_{centrality}')
 
-        # hadron v2
+        # hadron v2 (this part worked for test soft particles)
+        # if observable_type in ['hadron_correlations'] and 'v2' in observable and self.is_AA:
+
+        #     h = self.observable_settings[f'jetscape_distribution']
+        #     if h:
+        #         h_num_name = f'h_{observable_type}_{observable}_{method}_num_{centrality}'
+        #         h_num_name_holes = f'h_{observable_type}_{observable}_{method}_holes_num_{centrality}'
+        #         h_denom_name = f'h_{observable_type}_{observable}_{method}_{centrality}'
+        #         h_denom_name_holes = f'h_{observable_type}_{observable}_{method}_holes_{centrality}'
+
+        #         self.observable_settings[f'jetscape_distribution'] = self.input_file.Get(h_num_name).Clone()
+        #         self.observable_settings[f'jetscape_distribution_unsubtracted'] = self.input_file.Get(h_num_name).Clone()
+
+        #         # Check if the 'holes' histograms exist
+        #         h_num_holes = self.input_file.Get(h_num_name_holes)
+        #         h_denom_holes = self.input_file.Get(h_denom_name_holes)
+
+        #         for i in range(0, self.input_file.Get(h_num_name).GetNbinsX()):
+        #             h_num_i = self.input_file.Get(h_num_name).GetBinContent(i)
+        #             h_denom_i = self.input_file.Get(h_denom_name).GetBinContent(i)
+
+        #             # Use zeros if 'holes' histograms do not exist
+        #             h_num_holes_i = h_num_holes.GetBinContent(i) if h_num_holes else 0.0
+        #             h_denom_holes_i = h_denom_holes.GetBinContent(i) if h_denom_holes else 0.0
+
+        #             if h_denom_i == 0.0:
+        #                 h_denom_i = -99.0
+        #                 h_denom_holes_i = 0.0
+        #                 h_num_i = 0.0
+
+        #             self.observable_settings[f'jetscape_distribution'].SetBinContent(
+        #                 i, 
+        #                 (h_num_i - h_num_holes_i) / (h_denom_i - h_denom_holes_i + 1.e-20)
+        #             )
+        #             self.observable_settings[f'jetscape_distribution_unsubtracted'].SetBinContent(
+        #                 i, 
+        #                 h_num_i / h_denom_i
+        #             )
+
+        #         self.observable_settings[f'jetscape_distribution'].SetName(
+        #             f'jetscape_distribution_{observable_type}_{observable}_{method}_{centrality}'
+        #         )
+        #         self.observable_settings[f'jetscape_distribution_unsubtracted'].SetName(
+        #             f'jetscape_distribution_unsubtracted_{observable_type}_{observable}_{method}_{centrality}'
+        #         )
+
         if observable_type in ['hadron_correlations'] and 'v2' in observable and self.is_AA:
 
-            h = self.observable_settings[f'jetscape_distribution']
-            if h:
-                h_num_name = f'h_{observable_type}_{observable}{method}_num_{centrality}'
-                h_num_name_holes = f'h_{observable_type}_{observable}{method}_holes_num_{centrality}'
-                h_denom_name = f'h_{observable_type}_{observable}{method}_{centrality}'
-                h_denom_name_holes = f'h_{observable_type}_{observable}{method}_holes_{centrality}'
+            # Get the histograms for particles of interest (POI) and reference particles (ref)
+            poi_settings = self.observable_settings[f'jetscape_distribution{collection_label}']
+            ref_settings = self.observable_settings['jetscape_distribution']
 
-                self.observable_settings[f'jetscape_distribution'] = self.input_file.Get(h_num_name).Clone()
-                self.observable_settings[f'jetscape_distribution_unsubtracted'] = self.input_file.Get(h_num_name).Clone()
+            if poi_settings and ref_settings:
+                # POI
+                h_N_pT = poi_settings['h_N_pT']
+                h_Qn_component = {n: {
+                    'real': poi_settings[f'h_Qn{n}_real'],
+                    'imag': poi_settings[f'h_Qn{n}_imag']
+                } for n in range(1, self.norder)}
 
-                for i in range(0, self.input_file.Get(h_num_name).GetNbinsX()):
-                    h_num_i = self.input_file.Get(h_num_name).GetBinContent(i)
-                    h_num_holes_i = self.input_file.Get(h_num_name_holes).GetBinContent(i)
-                    h_denom_i = self.input_file.Get(h_denom_name).GetBinContent(i)
-                    h_denom_holes_i = self.input_file.Get(h_denom_name_holes).GetBinContent(i)
+                # reference
+                h_N_ref = ref_settings['h_N_ref']
+                h_Qn_ref_real = ref_settings['h_Qn_ref_real']
+                h_Qn_ref_imag = ref_settings['h_Qn_ref_imag']
 
-                    if h_denom_i == 0.0:
-                        h_denom_i = -99.0
-                        h_denom_holes_i = 0.0
-                        h_num_i = 0.0
+                # Pack arrays in the format required by vn calculation functions
+                # Prepare arrays for QnpT_diff and Qnref
+                QnpT_diff_array, Qnref_array = [], []
 
-                    self.observable_settings[f'jetscape_distribution'].SetBinContent(i, (h_num_i - h_num_holes_i)/(h_denom_i - h_denom_holes_i + 1.e-20) )
-                    self.observable_settings[f'jetscape_distribution_unsubtracted'].SetBinContent(i,h_num_i/h_denom_i)
+                # Loop over events
+                for event_id in range(1, h_N_pT.GetNbinsX() + 1):
+                    # POI particle counts and Qn vectors
+                    N_pT = np.array([h_N_pT.GetBinContent(event_id, pt_bin) 
+                                        for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
+                    QnpT_diff_event = [N_pT]
+                    for n in range(1, self.norder):
+                        Qn_pT_real = np.array([h_Qn_component[n]['real'].GetBinContent(event_id, pt_bin)
+                                               for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
+                        Qn_pT_imag = np.array([h_Qn_component[n]['imag'].GetBinContent(event_id, pt_bin)
+                                               for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
+                        QnpT_diff_event.append(Qn_pT_real + 1j * Qn_pT_imag)
+                    QnpT_diff_array.append(QnpT_diff_event)
 
-                self.observable_settings[f'jetscape_distribution'].SetName(f'jetscape_distribution_{observable_type}_{observable}{method}_{centrality}')
-                self.observable_settings[f'jetscape_distribution_unsubtracted'].SetName(f'jetscape_distribution_unsubtracted_{observable_type}_{observable}{method}_{centrality}')
+                    # Reference particle counts and Qn vectors
+                    N_ref = h_N_ref.GetBinContent(event_id)
+                    Qnref_event = [N_ref]
+                    for n in range(1, self.norder):
+                        Qn_ref_real = h_Qn_ref_real[n].GetBinContent(event_id)
+                        Qn_ref_imag = h_Qn_ref_imag[n].GetBinContent(event_id)
+                        Qnref_event.append(Qn_ref_real + 1j * Qn_ref_imag)
+                    Qnref_array.append(Qnref_event)
+
+                # Calculate integrated flow v2 using SP and/or 4-particle methods
+                base_name = f'{observable_type}_{observable}_{method}_{centrality}'
+
+                # Infer the pT binning from the histograms
+                bin_edges = np.array([h_N_pT.GetXaxis().GetBinLowEdge(bin_idx) 
+                                      for bin_idx in range(1, h_N_pT.GetNbinsY() + 2)])
+
+                for calc_method, func in [('SP', self.calculate_vnSP_diff), ('four', self.calculate_vn4_diff)]:
+                    if calc_method in observable:
+                        # Perform vn calculation (v2 specifically)
+                        vn_result = func(QnpT_diff_array, Qnref_array)
+                        vn_values = vn_result[0]  # Extract v2 values
+                        vn_errors = vn_result[1]  # Extract v2 errors
+
+                        # Create a histogram for v2
+                        hname = f'h_{base_name}_{calc_method}'
+                        h_v2 = ROOT.TH1F(hname, hname, len(bin_edges) - 1, bin_edges)
+                        h_v2.Sumw2()
+
+                        # Fill the histogram with v2 values and errors
+                        for ibin, (vn_val, vn_err_val) in enumerate(zip(vn_values, vn_errors), start=1):
+                            h_v2.SetBinContent(ibin, vn_val)
+                            h_v2.SetBinError(ibin, vn_err_val)
+
+                        # Save the v2 histogram in observable_settings
+                        self.observable_settings[f'jetscape_distribution{collection_label}'][f'{calc_method}_v2'] = h_v2
 
         # For the ATLAS rapidity-dependence, we need to divide the histograms by their first bin (|y|<0.3) to form a double ratio
         if observable == 'pt_y_atlas':
@@ -896,7 +1078,7 @@ class PlotResults(common_base.CommonBase):
     #-------------------------------------------------------------------------------------------
     def plot_observable(self, observable_type, observable, centrality, method='', pt_suffix='', logy = False):
 
-        label = f'{observable_type}_{observable}{method}{self.suffix}_{centrality}{pt_suffix}'
+        label = f'{observable_type}_{observable}_{method}{self.suffix}_{centrality}{pt_suffix}'
 
         # for hadron v2
         if observable_type in ['hadron_correlations'] and 'v2' in observable:
@@ -939,7 +1121,7 @@ class PlotResults(common_base.CommonBase):
             os.makedirs(output_dir)
 
         force_write = True        
-        filename = f'Data_{observable_type}_{observable}{method}{self.suffix}_{centrality}{pt_suffix}.dat'
+        filename = f'Data_{observable_type}_{observable}_{method}{self.suffix}_{centrality}{pt_suffix}.dat'
         outputfile = os.path.join(output_dir, filename)
         if force_write or not os.path.exists(outputfile):
 
@@ -1275,7 +1457,7 @@ class PlotResults(common_base.CommonBase):
         if self.skip_pp_ratio:
             text = 'skip ratio plot -- pp/AA binning mismatch'
             text_latex.DrawLatex(x, 0.93, text)
-        hname = f'h_{observable_type}_{observable}{method}{self.suffix}_{centrality}{pt_suffix}'
+        hname = f'h_{observable_type}_{observable}_{method}{self.suffix}_{centrality}{pt_suffix}'
         c.SaveAs(os.path.join(self.output_dir, f'{hname}{self.file_format}'))
         c.Close()
 
