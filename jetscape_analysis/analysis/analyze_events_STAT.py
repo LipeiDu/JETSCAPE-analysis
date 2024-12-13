@@ -85,7 +85,7 @@ class AnalyzeJetscapeEvents_STAT(analyze_events_base_STAT.AnalyzeJetscapeEvents_
             #print(f'Updated output_file name to "{self.output_file}" in order to add identifying indices.')
 
         self.norder = config['norder']
-        
+
         # Load observable blocks
         self.hadron_observables = config['hadron']
         self.hadron_correlation_observables = config['hadron_correlations']

@@ -79,7 +79,16 @@ class PlotResults(common_base.CommonBase):
         self.power = self.config['power']
         self.pt_ref = self.config['pt_ref']
 
-        self.ref_input_file = ROOT.TFile('/home/jetscape-user/JETSCAPE-STAT-output/jetscape_user_5020_40_50_jet/jetscape_PbPb_Run0202_5020_0000_QnVector.root', 'READ')
+        # Define the file path
+        file_path = '/home/jetscape-user/JETSCAPE-STAT-output/jetscape_user_5020_40_50_jet/jetscape_PbPb_Run0202_5020_0000_QnVector.root'
+
+        # Check if the file exists
+        if not os.path.exists(file_path):
+            print(f"Error: The file '{file_path}' does not exist.")
+        else:
+            # Open the ROOT file
+            self.ref_input_file = ROOT.TFile(file_path, 'READ')
+
         self.norder = self.config['norder']
 
         # If AA, set different options for hole subtraction treatment
@@ -355,6 +364,7 @@ class PlotResults(common_base.CommonBase):
         # For v2 of hadrons -- form ratio of JETSCAPE to data and load into self.observable_settings
         if observable_type in ['hadron_correlations'] and 'v2' in observable and self.is_AA and self.observable_settings[f'jetscape_distribution']:
             self.observable_settings['ratio'] =  self.plot_utils.divide_histogram_by_tgraph(self.observable_settings[f'jetscape_distribution'], self.observable_settings['data_distribution'])
+            self.observable_settings['ratio'] =  self.plot_utils.divide_histogram_by_tgraph(self.observable_settings[f'jetscape_distribution_unsubtracted'], self.observable_settings['data_distribution'])
 
         #-----------------------------------------------------------
         # For v2 of jets -- form ratio of JETSCAPE to data and load into self.observable_settings; currently observable_settings['ratio'] is overwritten, need fix; LDU
@@ -559,6 +569,7 @@ class PlotResults(common_base.CommonBase):
         if 'semi_inclusive' in observable_type:
             self.construct_semi_inclusive_histogram(keys, observable_type, observable, centrality, collection_label=collection_label)
 
+        # In the case of flow calculation, construct histograms of Qn vectors of various harmonics
         elif observable_type in ['hadron_correlations', 'dijet'] and 'v2' in observable:
             self.construct_flow_vector_histograms(keys, observable_type, observable, centrality, method, collection_label=collection_label)
 
@@ -596,7 +607,8 @@ class PlotResults(common_base.CommonBase):
         if h_N_pT_name in keys:
             h_N_pT = self.input_file.Get(h_N_pT_name)
             h_N_pT.SetDirectory(0)
-            h_N_pT.Sumw2()
+            if not h_N_pT.GetSumw2():
+                h_N_pT.Sumw2()
             self.observable_settings[f'jetscape_distribution{collection_label}']['h_N_pT'] = h_N_pT
 
         # Fetch Qn component histograms for each harmonic (real and imaginary)
@@ -606,15 +618,18 @@ class PlotResults(common_base.CommonBase):
                 if hname in keys:
                     h_Qn_component = self.input_file.Get(hname)
                     h_Qn_component.SetDirectory(0)
-                    h_Qn_component.Sumw2()
+                    if not h_Qn_component.GetSumw2():
+                        h_Qn_component.Sumw2()
                     self.observable_settings[f'jetscape_distribution{collection_label}'][f'h_Qn{n}_{component}'] = h_Qn_component
 
         # Fetch reference flow vector histograms (shared across hole labels)
         # Avoid redundant retrieval for reference histograms
         if 'Qn_ref' not in self.observable_settings:
             base_name = f"h_{observable_type}_{observable}_{centrality}"
+            base_name = f"h_soft_differential_v2_four_alice_{centrality}"
 
             self.observable_settings['jetscape_distribution']['h_N_ref'] = self.ref_input_file.Get(f"{base_name}_N_Qn_ref")
+
             self.observable_settings['jetscape_distribution']['h_Qn_ref_real'] = {}
             self.observable_settings['jetscape_distribution']['h_Qn_ref_imag'] = {}
 
@@ -625,10 +640,12 @@ class PlotResults(common_base.CommonBase):
                 h_imag_ref = self.ref_input_file.Get(imag_name_ref)
                 if h_real_ref:
                     h_real_ref.SetDirectory(0)
-                    h_real_ref.Sumw2()
+                    if not h_real_ref.GetSumw2():
+                        h_real_ref.Sumw2()
                 if h_imag_ref:
                     h_imag_ref.SetDirectory(0)
-                    h_imag_ref.Sumw2()
+                    if not h_imag_ref.GetSumw2():
+                        h_imag_ref.Sumw2()
                 self.observable_settings['jetscape_distribution']['h_Qn_ref_real'][n] = h_real_ref
                 self.observable_settings['jetscape_distribution']['h_Qn_ref_imag'][n] = h_imag_ref
 
@@ -883,124 +900,96 @@ class PlotResults(common_base.CommonBase):
 
                 self.observable_settings[f'jetscape_distribution{collection_label}'].SetName(f'jetscape_distribution_{observable_type}_{observable}_{method}_{centrality}')
 
-        # hadron v2 (this part worked for test soft particles)
-        # if observable_type in ['hadron_correlations'] and 'v2' in observable and self.is_AA:
-
-        #     h = self.observable_settings[f'jetscape_distribution']
-        #     if h:
-        #         h_num_name = f'h_{observable_type}_{observable}_{method}_num_{centrality}'
-        #         h_num_name_holes = f'h_{observable_type}_{observable}_{method}_holes_num_{centrality}'
-        #         h_denom_name = f'h_{observable_type}_{observable}_{method}_{centrality}'
-        #         h_denom_name_holes = f'h_{observable_type}_{observable}_{method}_holes_{centrality}'
-
-        #         self.observable_settings[f'jetscape_distribution'] = self.input_file.Get(h_num_name).Clone()
-        #         self.observable_settings[f'jetscape_distribution_unsubtracted'] = self.input_file.Get(h_num_name).Clone()
-
-        #         # Check if the 'holes' histograms exist
-        #         h_num_holes = self.input_file.Get(h_num_name_holes)
-        #         h_denom_holes = self.input_file.Get(h_denom_name_holes)
-
-        #         for i in range(0, self.input_file.Get(h_num_name).GetNbinsX()):
-        #             h_num_i = self.input_file.Get(h_num_name).GetBinContent(i)
-        #             h_denom_i = self.input_file.Get(h_denom_name).GetBinContent(i)
-
-        #             # Use zeros if 'holes' histograms do not exist
-        #             h_num_holes_i = h_num_holes.GetBinContent(i) if h_num_holes else 0.0
-        #             h_denom_holes_i = h_denom_holes.GetBinContent(i) if h_denom_holes else 0.0
-
-        #             if h_denom_i == 0.0:
-        #                 h_denom_i = -99.0
-        #                 h_denom_holes_i = 0.0
-        #                 h_num_i = 0.0
-
-        #             self.observable_settings[f'jetscape_distribution'].SetBinContent(
-        #                 i, 
-        #                 (h_num_i - h_num_holes_i) / (h_denom_i - h_denom_holes_i + 1.e-20)
-        #             )
-        #             self.observable_settings[f'jetscape_distribution_unsubtracted'].SetBinContent(
-        #                 i, 
-        #                 h_num_i / h_denom_i
-        #             )
-
-        #         self.observable_settings[f'jetscape_distribution'].SetName(
-        #             f'jetscape_distribution_{observable_type}_{observable}_{method}_{centrality}'
-        #         )
-        #         self.observable_settings[f'jetscape_distribution_unsubtracted'].SetName(
-        #             f'jetscape_distribution_unsubtracted_{observable_type}_{observable}_{method}_{centrality}'
-        #         )
-
+        # hadron v2
         if observable_type in ['hadron_correlations'] and 'v2' in observable and self.is_AA:
 
-            # Get the histograms for particles of interest (POI) and reference particles (ref)
-            poi_settings = self.observable_settings[f'jetscape_distribution{collection_label}']
-            ref_settings = self.observable_settings['jetscape_distribution']
+            subtraction_labels = ['_unsubtracted', '']
+            for subtraction_label in subtraction_labels:
 
-            if poi_settings and ref_settings:
-                # POI
-                h_N_pT = poi_settings['h_N_pT']
-                h_Qn_component = {n: {
-                    'real': poi_settings[f'h_Qn{n}_real'],
-                    'imag': poi_settings[f'h_Qn{n}_imag']
-                } for n in range(1, self.norder)}
+                # Get the histograms for particles of interest (POI) and reference particles (ref)
+                poi_settings = self.observable_settings[f'jetscape_distribution{subtraction_label}']
+                ref_settings = self.observable_settings['jetscape_distribution']
 
-                # reference
-                h_N_ref = ref_settings['h_N_ref']
-                h_Qn_ref_real = ref_settings['h_Qn_ref_real']
-                h_Qn_ref_imag = ref_settings['h_Qn_ref_imag']
+                if poi_settings and ref_settings:
+                    # POI
+                    h_N_pT = poi_settings['h_N_pT']
+                    h_Qn_component = {n: {
+                        'real': poi_settings[f'h_Qn{n}_real'],
+                        'imag': poi_settings[f'h_Qn{n}_imag']
+                    } for n in range(1, self.norder)}
 
-                # Pack arrays in the format required by vn calculation functions
-                # Prepare arrays for QnpT_diff and Qnref
-                QnpT_diff_array, Qnref_array = [], []
+                    # reference
+                    h_N_ref = ref_settings['h_N_ref']
+                    h_Qn_ref_real = ref_settings['h_Qn_ref_real']
+                    h_Qn_ref_imag = ref_settings['h_Qn_ref_imag']
 
-                # Loop over events
-                for event_id in range(1, h_N_pT.GetNbinsX() + 1):
-                    # POI particle counts and Qn vectors
-                    N_pT = np.array([h_N_pT.GetBinContent(event_id, pt_bin) 
-                                        for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
-                    QnpT_diff_event = [N_pT]
-                    for n in range(1, self.norder):
-                        Qn_pT_real = np.array([h_Qn_component[n]['real'].GetBinContent(event_id, pt_bin)
-                                               for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
-                        Qn_pT_imag = np.array([h_Qn_component[n]['imag'].GetBinContent(event_id, pt_bin)
-                                               for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
-                        QnpT_diff_event.append(Qn_pT_real + 1j * Qn_pT_imag)
-                    QnpT_diff_array.append(QnpT_diff_event)
+                    # Pack arrays in the format required by vn calculation functions
+                    # Prepare arrays for QnpT_diff and Qnref
+                    QnpT_diff_array, Qnref_array = [], []
 
-                    # Reference particle counts and Qn vectors
-                    N_ref = h_N_ref.GetBinContent(event_id)
-                    Qnref_event = [N_ref]
-                    for n in range(1, self.norder):
-                        Qn_ref_real = h_Qn_ref_real[n].GetBinContent(event_id)
-                        Qn_ref_imag = h_Qn_ref_imag[n].GetBinContent(event_id)
-                        Qnref_event.append(Qn_ref_real + 1j * Qn_ref_imag)
-                    Qnref_array.append(Qnref_event)
+                    # Loop over events
+                    for event_id in range(1, h_N_pT.GetNbinsX() + 1):
 
-                # Calculate integrated flow v2 using SP and/or 4-particle methods
-                base_name = f'{observable_type}_{observable}_{method}_{centrality}'
+                        # POI particle counts and Qn vectors
+                        N_pT = np.array([h_N_pT.GetBinContent(event_id, pt_bin) 
+                                            for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
+                        QnpT_diff_event = [N_pT]
+                        for n in range(1, self.norder):
+                            Qn_pT_real = np.array([h_Qn_component[n]['real'].GetBinContent(event_id, pt_bin)
+                                                   for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
+                            Qn_pT_imag = np.array([h_Qn_component[n]['imag'].GetBinContent(event_id, pt_bin)
+                                                   for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
+                            QnpT_diff_event.append(Qn_pT_real + 1j * Qn_pT_imag)
+                        QnpT_diff_array.append(QnpT_diff_event)
 
-                # Infer the pT binning from the histograms
-                bin_edges = np.array([h_N_pT.GetXaxis().GetBinLowEdge(bin_idx) 
-                                      for bin_idx in range(1, h_N_pT.GetNbinsY() + 2)])
+                        # Reference particle counts and Qn vectors
+                        N_ref = h_N_ref.GetBinContent(event_id)
+                        Qnref_event = [N_ref]
+                        for n in range(1, self.norder):
+                            Qn_ref_real = h_Qn_ref_real[n].GetBinContent(event_id)
+                            Qn_ref_imag = h_Qn_ref_imag[n].GetBinContent(event_id)
+                            Qnref_event.append(Qn_ref_real + 1j * Qn_ref_imag)
+                        Qnref_array.append(Qnref_event)
 
-                for calc_method, func in [('SP', self.calculate_vnSP_diff), ('four', self.calculate_vn4_diff)]:
-                    if calc_method in observable:
-                        # Perform vn calculation (v2 specifically)
-                        vn_result = func(QnpT_diff_array, Qnref_array)
-                        vn_values = vn_result[0]  # Extract v2 values
-                        vn_errors = vn_result[1]  # Extract v2 errors
+                    # Calculate integrated flow v2 using SP or 4-particle methods
+                    # Determine which vn calculation method to use based on the input `method`
+                    if method == "sp":
+                        vn_result = self.calculate_vnSP_diff(QnpT_diff_array, Qnref_array)
+                    elif method == "four":
+                        vn_result = self.calculate_vn4_diff(QnpT_diff_array, Qnref_array)
+                    else:
+                        raise ValueError(f"Unsupported flow calculation method: {method}")
 
-                        # Create a histogram for v2
-                        hname = f'h_{base_name}_{calc_method}'
-                        h_v2 = ROOT.TH1F(hname, hname, len(bin_edges) - 1, bin_edges)
-                        h_v2.Sumw2()
+                    # Extract the vn results and errors for all n
+                    vn_values = vn_result[0]
+                    vn_errors = vn_result[1]
 
-                        # Fill the histogram with v2 values and errors
-                        for ibin, (vn_val, vn_err_val) in enumerate(zip(vn_values, vn_errors), start=1):
-                            h_v2.SetBinContent(ibin, vn_val)
-                            h_v2.SetBinError(ibin, vn_err_val)
+                    # Extract pT bin edges from the y-axis of h_N_pT
+                    pt_bin_edges = [
+                        h_N_pT.GetYaxis().GetBinLowEdge(pt_bin) for pt_bin in range(1, h_N_pT.GetNbinsY() + 2)
+                    ]
+                    
+                    num_pt_bins = len(pt_bin_edges) - 1  # Number of bins is one less than the number of edges
+                    # Convert pt_bin_edges to a numpy array of type double
+                    pt_bin_edges_array = np.array(pt_bin_edges, dtype='d')
 
-                        # Save the v2 histogram in observable_settings
-                        self.observable_settings[f'jetscape_distribution{collection_label}'][f'{calc_method}_v2'] = h_v2
+                    # Save the results for each harmonic order in separate histograms
+                    for n, (vn_vals, vn_errs) in enumerate(zip(vn_values, vn_errors), start=1):
+                        
+                        # Create a histogram for v_n at order n
+                        hname = f'h_{observable_type}_{observable}_{method}_v{n}_{centrality}{subtraction_label}'
+                        h_vn = ROOT.TH1F(hname, hname, num_pt_bins, pt_bin_edges_array)  # Using array for bin edges
+                        h_vn.Sumw2()
+
+                        # Fill the histogram with v_n values and errors
+                        for ibin, (vn_val, vn_err_val) in enumerate(zip(vn_vals, vn_errs), start=1):
+                            h_vn.SetBinContent(ibin, vn_val)
+                            h_vn.SetBinError(ibin, vn_err_val)
+
+                        # Save the histogram to observable_settings with a key indicating the harmonic order
+                        # We are only plotting v2, so we avoid having self.observable_settings[f'jetscape_distribution{collection_label}'][f'v{n}']
+                        if n == 2:
+                            self.observable_settings[f'jetscape_distribution{subtraction_label}'] = h_vn
 
         # For the ATLAS rapidity-dependence, we need to divide the histograms by their first bin (|y|<0.3) to form a double ratio
         if observable == 'pt_y_atlas':
@@ -1072,6 +1061,141 @@ class PlotResults(common_base.CommonBase):
 
                 # Now, put it together and store the result
                 self.observable_settings["jetscape_distribution"] = h_yield
+
+    #-------------------------------------------------------------------------------------------
+    # Functions for flow calculations
+    #-------------------------------------------------------------------------------------------
+    def calculate_vnSP_diff(self, QnpT_diff, Qnref):
+        """
+            this funciton calculates the scalar-product vn
+            assumption: no overlap between particles of interest
+                        and reference flow Qn vectors
+            inputs: QnpT_diff[nev, norder, npT], Qnref[nev, norder]
+            return: [vn{SP}(pT), vn{SP}(pT)_err]
+        """
+        QnpT_diff = np.array(QnpT_diff)
+        Qnref = np.array(Qnref)
+        nev, norder, npT = QnpT_diff.shape
+
+        vn_values = []
+        vn_errors = []
+
+        Nref = np.real(Qnref[:, 0])
+        N2refPairs = Nref*(Nref - 1.)
+        NpTPOI = np.real(QnpT_diff[:, 0, :])
+        N2POIPairs = NpTPOI*Nref.reshape(nev, 1)
+        for iorder in range(1, norder):
+            # compute Cn^ref{2}
+            QnRef_tmp = Qnref[:, iorder]
+            n2ref = np.abs(QnRef_tmp)**2. - Nref
+
+            # compute vn{SP}(pT)
+            QnpT_tmp = QnpT_diff[:, iorder, :]
+            n2pT = np.real(QnpT_tmp*np.conj(QnRef_tmp.reshape(nev, 1)))
+
+            # calcualte observables with Jackknife resampling method
+            vnSPpT_arr = np.zeros([nev, npT])
+            for iev in range(nev):
+                array_idx = [True]*nev
+                array_idx[iev] = False
+                array_idx = np.array(array_idx)
+
+                Cn2ref_arr = np.mean(n2ref[array_idx])/np.mean(N2refPairs[array_idx])
+                vnSPpT_arr[iev, :] = (np.mean(n2pT[array_idx], 0)
+                        /(np.mean(N2POIPairs[array_idx], 0)+1.e-20)/(np.sqrt(Cn2ref_arr))+1.e-20)
+            vnSPpT_mean = np.mean(vnSPpT_arr, 0)
+            vnSPpT_err  = np.sqrt((nev - 1.)/nev
+                               *np.sum((vnSPpT_arr - vnSPpT_mean)**2., 0))
+            
+            vn_values.append(vnSPpT_mean)
+            vn_errors.append(vnSPpT_err)
+
+        return [vn_values, vn_errors]
+
+    def calculate_vn4_diff(self, QnpT_diff, Qnref):
+        """
+            This function calculates the 4-particle vn(pT) using the scalar-product method.
+            Assumption: No overlap between particles of interest and reference flow Qn vectors.
+            Inputs:
+                - QnpT_diff: Shape [nev, norder, npT]
+                - Qnref: Shape [nev, norder]
+            Returns:
+                - vn_values: List of mean vn values for different harmonic orders (one array per harmonic order)
+                - vn_errors: List of vn errors for different harmonic orders (one array per harmonic order)
+        """
+        QnpT_diff = np.array(QnpT_diff)
+        Qnref = np.array(Qnref)
+        nev, norder, npT = QnpT_diff.shape
+
+        vn_values = []
+        vn_errors = []
+
+        for iorder in range(1, 4):  # Process for orders 1 to 3
+            # compute Cn^ref{4}
+            Nref = np.real(Qnref[:, 0])
+            QnRef_tmp = Qnref[:, iorder]
+            Q2nRef_tmp = Qnref[:, 2 * iorder]
+            N4refPairs = Nref * (Nref - 1.) * (Nref - 2.) * (Nref - 3.)
+            n4ref = (np.abs(QnRef_tmp)**4.
+                     - 2. * np.real(Q2nRef_tmp * np.conj(QnRef_tmp) * np.conj(QnRef_tmp))
+                     - 4. * (Nref - 2) * np.abs(QnRef_tmp)**2. + np.abs(Q2nRef_tmp)**2.
+                     + 2. * Nref * (Nref - 3))
+            N2refPairs = Nref * (Nref - 1.)
+            n2ref = np.abs(QnRef_tmp)**2. - Nref
+
+            # compute dn{4}(pT)
+            NpTPOI = np.real(QnpT_diff[:, 0, :])
+            QnpT_tmp = QnpT_diff[:, iorder, :]
+            Nref = Nref.reshape(len(Nref), 1)
+            QnRef_tmp = QnRef_tmp.reshape(len(QnRef_tmp), 1)
+            Q2nRef_tmp = Q2nRef_tmp.reshape(len(Q2nRef_tmp), 1)
+            N4POIPairs = NpTPOI * (Nref - 1.) * (Nref - 2.) * (Nref - 3.) + 1e-30
+            n4pT = np.real(QnpT_tmp * QnRef_tmp * np.conj(QnRef_tmp) * np.conj(QnRef_tmp)
+                           - 2. * (Nref - 1) * QnpT_tmp * np.conj(QnRef_tmp)
+                           - QnpT_tmp * QnRef_tmp * np.conj(Q2nRef_tmp))
+            N2POIPairs = NpTPOI * Nref + 1e-30
+            n2pT = np.real(QnpT_tmp * np.conj(QnRef_tmp))
+
+            # Calculate observables with Jackknife resampling
+            Cn2ref_arr = np.zeros(nev)
+            Cn4ref_arr = np.zeros(nev)
+            dn4pT_arr = np.zeros(npT)
+            vn4pT4_arr = np.zeros([nev, npT])
+            
+            for iev in range(nev):
+                array_idx = [True] * nev
+                array_idx[iev] = False
+                array_idx = np.array(array_idx)
+
+                Cn2ref_arr[iev] = (
+                    np.mean(n2ref[array_idx]) / np.mean(N2refPairs[array_idx])
+                )
+                Cn4ref_arr[iev] = (
+                    np.mean(n4ref[array_idx]) / np.mean(N4refPairs[array_idx])
+                    - 2. * (Cn2ref_arr[iev])**2.
+                )
+
+                dn4pT_arr = (
+                    np.mean(n4pT[array_idx, :], 0) / np.mean(N4POIPairs[array_idx, :], 0)
+                    - 2. * np.mean(n2pT[array_idx, :], 0) / np.mean(N2POIPairs[array_idx, :], 0) * Cn2ref_arr[iev]
+                )
+
+                vn4pT4_arr[iev, :] = (-dn4pT_arr)**4. / ((-Cn4ref_arr[iev])**3.)
+
+            vn4pT4_mean = np.mean(vn4pT4_arr, axis=0)
+            vn4pT4_err = np.sqrt((nev - 1.) / nev * np.sum((vn4pT4_arr - vn4pT4_mean)**2., axis=0))
+
+            vn4pT = np.zeros(npT)
+            vn4pT_err = np.zeros(npT)
+            idx = vn4pT4_mean > 0
+            vn4pT[idx] = vn4pT4_mean[idx]**(0.25)
+            vn4pT_err[idx] = vn4pT4_err[idx] / (4. * vn4pT4_mean[idx]**(0.75))
+
+            # Append calculated values and errors for this harmonic order
+            vn_values.append(vn4pT)
+            vn_errors.append(vn4pT_err)
+
+        return [vn_values, vn_errors]
 
     #-------------------------------------------------------------------------------------------
     # Plot distributions

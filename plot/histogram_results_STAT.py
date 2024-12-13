@@ -73,6 +73,7 @@ class HistogramResults(common_base.CommonBase):
         #       that the jobs failed.
         self.weights = self.observables_df.get('event_weight', [])
         self.pt_hat = self.observables_df.get('pt_hat', [])
+        self.event_id = self.observables_df.get('event_id', [])
         self.soft_particle_v2 = self.observables_df.get('soft_v2', [])
 
         #------------------------------------------------------
@@ -626,23 +627,23 @@ class HistogramResults(common_base.CommonBase):
 
         # Check if the observable is v2-related
         if "hadron_correlations_v2" in column_name or "dijet_v2" in column_name:
-            # Create and normalize histograms for Qn vector components (real or imaginary)
-            # or calculate total_NpT only if compute_total_NpT_only is True.
-
+            # Create 2D histograms for Qn vector components with event ID as x-axis and pT bins as y-axis.
             h_total_NpT = None
 
             # Case 1: Compute total_NpT only
             if compute_total_NpT_only:
                 h_total_NpT_name = f'h_{column_name}_NpT_{centrality}'
-                h_total_NpT = ROOT.TH1F(h_total_NpT_name, h_total_NpT_name, len(bins) - 1, bins)
+                n_events = len(self.event_id)
+                h_total_NpT = ROOT.TH2F(h_total_NpT_name, h_total_NpT_name, n_events, 0.5, n_events + 0.5, len(bins) - 1, bins)
                 h_total_NpT.Sumw2()
 
                 # Fill the total_NpT histogram
                 for i, particle_data in enumerate(col):
                     if particle_data is not None:
+                        event_id = self.event_id[i]
                         for value in particle_data:
                             pt = value[0]  # pT value
-                            h_total_NpT.Fill(pt, 1)  # Increment particle count
+                            h_total_NpT.Fill(event_id, pt, 1)  # Increment particle count
 
                 # Append the total_NpT histogram to the output list
                 if h_total_NpT_name not in [h.GetName() for h in self.output_list]:
@@ -651,7 +652,6 @@ class HistogramResults(common_base.CommonBase):
                 return
 
             # Case 2: Normalize Qn vectors using precomputed total_NpT
-            # Fetch the precomputed h_total_NpT
             if h_total_NpT_name:
                 h_total_NpT = next((h for h in self.output_list if h.GetName() == h_total_NpT_name), None)
             if not h_total_NpT:
@@ -659,17 +659,18 @@ class HistogramResults(common_base.CommonBase):
 
             # Define histogram names
             hname = f'h_{column_name}_{centrality}'
-            # Create the Qn component histogram
-            h_Qn_component = ROOT.TH1F(hname, hname, len(bins) - 1, bins)
+            n_events = len(self.event_id)
+            h_Qn_component = ROOT.TH2F(hname, hname, n_events, 0.5, n_events + 0.5, len(bins) - 1, bins)
             h_Qn_component.Sumw2()
 
             # Fill the component histogram
             for i, particle_data in enumerate(col):
                 if particle_data is not None:
+                    event_id = self.event_id[i]
                     for value in particle_data:
                         pt = value[0]  # pT value
                         component = value[1]  # Real or imaginary component
-                        h_Qn_component.Fill(pt, component)
+                        h_Qn_component.Fill(event_id, pt, component)
 
             # Append the normalized histogram to the output list
             self.output_list.append(h_Qn_component)

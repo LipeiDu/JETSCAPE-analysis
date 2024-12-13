@@ -135,12 +135,12 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
         start = time.time()
         weight_sum = 0.
         soft_v2_squared_sum = 0.
-        for i,event in df_event_chunk.iterrows():
+        for event_id, event in df_event_chunk.iterrows():
 
-            if i % 1000 == 0:
-                print(f'event: {i}    (time elapsed: {time.time() - start} s)')
+            if event_id % 1000 == 0:
+                print(f'event: {event_id}    (time elapsed: {time.time() - start} s)')
 
-            if i > self.n_event_max:
+            if event_id > self.n_event_max:
                 break
 
             # Store dictionary of all observables for the event
@@ -160,7 +160,10 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
                 self.observable_dict_event['event_weight'] = event_weight
                 self.observable_dict_event['pt_hat'] = event['pt_hat']
                 self.observable_dict_event['soft_v2'] = soft_particle_v2
-                
+
+                # Add event ID to the dictionary; histograms are saved event-by-event for vn calculations
+                self.observable_dict_event['event_id'] = event_id
+
                 self.output_event_list.append(self.observable_dict_event)
 
         # Get total cross-section (same for all events at this point), weight sum, and centrality
