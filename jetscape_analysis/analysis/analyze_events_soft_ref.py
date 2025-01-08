@@ -25,12 +25,15 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # ---------------------------------------------------------------
     # Constructor
     # ---------------------------------------------------------------
-    def __init__(self, config_file="", input_file="", output_file="", **kwargs):
+    def __init__(self, config_file="", input_file="", output_file="", centrality=None, **kwargs):
 
         super(AnalyzeJetscapeEvents_Base, self).__init__(**kwargs)
         self.config_file = config_file
         self.input_file = input_file
         self.output_file = output_file
+
+        # centrality of the hydro event
+        self.centrality = centrality
 
         self.initialize_config()
 
@@ -45,10 +48,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         with open(self.config_file, 'r') as stream:
             self.config = yaml.safe_load(stream)
 
-        self.selected_pid = self.config['selected_pid']
-
-        # centrality of the hydro event
-        self.centrality = [40, 50]
+        self.is_AA = True
 
         # parameters of Qn vector writer in JETSCAPE
         self.n_pt_bins = self.config['n_pt_bins']
@@ -57,19 +57,16 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         self.n_y_bins = self.config['n_y_bins']
         self.y_min = self.config['y_min']
         self.y_max = self.config['y_max']
-        self.n_order = self.config['n_order']
+        self.norder = self.config['norder']
         self.n_oversample = self.config['n_oversample']
+
+        # select charged particles in the Qn vector file
+        self.selected_pid = self.config['selected_pid']
 
         # pT arrays for interpolation in flow calculation
         self.pT_low = self.config['pT_low']
         self.pT_high = self.config['pT_high']
         self.npT = self.config['npT']
-
-        # to be moved
-        self.eta_min_ref = self.config['eta_min_ref']
-        self.eta_max_ref = self.config['eta_max_ref']
-        self.eta_min = self.config['eta_min']
-        self.eta_max = self.config['eta_max']
 
     # ---------------------------------------------------------------
     # Main processing function
@@ -93,19 +90,28 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
         # Prepare result histograms for all observables before processing events
         result_histograms = {}  # Store histograms for each observable
-        for observable_type in self.config:
-            if observable_type not in ['soft_differential']:  # Skip unsupported types
-                continue
-            for observable_type in ['soft_differential']:
-                for observable, block in self.config[observable_type].items():
-                    for centrality_index, centrality in enumerate(block['centrality']):
-                        if centrality != self.centrality:
-                            continue  # Skip centrality mismatch
+        kinematic_cuts = {}  # Store kinematic cuts for each observable
 
-                        # Initialize histograms for the observable
-                        result_histograms[(observable_type, observable, tuple(centrality))] = self.initialize_result_histograms(
-                            observable_type, observable, centrality, total_events
-                        )
+        observable_type = 'hadron_correlations'
+        # Loop through each observable within the observable type
+        for observable, block in self.config[observable_type].items():
+            if "v2" in observable:  # only process "v2" observables
+                # Loop through methods (EP, SP, etc.)
+                for method, method_block in block.items():
+                    if not self.centrality_accepted(method_block['centrality']):
+                        continue  # Skip if centrality doesn't match
+
+                    # Extract kinematic cuts
+                    eta_cut = method_block['eta_cut']
+                    eta_min_ref = method_block['eta_min_ref']
+                    eta_max_ref = method_block['eta_max_ref']
+
+                    kinematic_cuts[(observable_type, observable, method, tuple(self.centrality))] = (eta_cut, eta_min_ref, eta_max_ref)
+
+                    # Initialize histograms for the observable
+                    result_histograms[(observable_type, observable, method, tuple(self.centrality))] = self.initialize_result_histograms(
+                        observable_type, observable, method, self.centrality, total_events
+                    )
 
         # Process events and loop over observables
         for event_id, event in all_events.items():
@@ -116,14 +122,17 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
             self.fill_qnvector_histogram(event)
 
             # Loop over observables for event-specific processing
-            for (observable_type, observable, centrality), histograms in result_histograms.items():
+            for (observable_type, observable, method, centrality), histograms in result_histograms.items():
                 print()
                 print(f'Histogram {observable_type} observables...')
 
-                # Apply observable-specific processing
-                results = self.process_qnvector_histogram(event_id)
+                # Get the kinematic cuts for this observable
+                eta_cut, eta_min_ref, eta_max_ref = kinematic_cuts[(observable_type, observable, method, centrality)]
+
+                # Apply observable-specific processing with the correct kinematic cuts
+                results = self.process_qnvector_histogram(event_id, eta_cut, eta_min_ref, eta_max_ref)
                 if results:
-                    self.fill_result_histograms(observable_type, observable, histograms, event_id, results)
+                    self.fill_result_histograms(histograms, event_id, results)
 
             # Clear Qn vector histograms after processing
             self.clear_qnvector_histograms()
@@ -142,9 +151,9 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         if not self.qnvector_histograms:
             self.qnvector_histograms['hist_dN'] = ROOT.TH2F("hist_dN", "dN; pT; y;", self.n_pt_bins, self.pt_min, self.pt_max, self.n_y_bins, self.y_min, self.y_max)
             self.qnvector_histograms['hist_vncos'] = {n: ROOT.TH2F(f"hist_vncos_n{n}", f"vncos (n={n}); pT; y;", 
-                                                                   self.n_pt_bins, self.pt_min, self.pt_max, self.n_y_bins, self.y_min, self.y_max) for n in range(1, self.n_order)}
+                                                                   self.n_pt_bins, self.pt_min, self.pt_max, self.n_y_bins, self.y_min, self.y_max) for n in range(1, self.norder)}
             self.qnvector_histograms['hist_vnsin'] = {n: ROOT.TH2F(f"hist_vnsin_n{n}", f"vnsin (n={n}); pT; y;", 
-                                                                   self.n_pt_bins, self.pt_min, self.pt_max, self.n_y_bins, self.y_min, self.y_max) for n in range(1, self.n_order)}
+                                                                   self.n_pt_bins, self.pt_min, self.pt_max, self.n_y_bins, self.y_min, self.y_max) for n in range(1, self.norder)}
 
     # ---------------------------------------------------------------
     # Function to fill 2D histogram with Qn vector results for a single event
@@ -166,7 +175,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
             if dN <= 0:
                 continue
             self.hist_dN.Fill(pt, y, dN)
-            for n in range(1, self.n_order):
+            for n in range(1, self.norder):
                 vncos, vnsin = result[8 + (n - 1) * 4], result[10 + (n - 1) * 4]
                 self.hist_vncos[n].Fill(pt, y, vncos)
                 self.hist_vnsin[n].Fill(pt, y, vnsin)
@@ -176,14 +185,14 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # ---------------------------------------------------------------
     def clear_qnvector_histograms(self):
         self.qnvector_histograms['hist_dN'].Reset()
-        for n in range(1, self.n_order):
+        for n in range(1, self.norder):
             self.qnvector_histograms['hist_vncos'][n].Reset()
             self.qnvector_histograms['hist_vnsin'][n].Reset()
 
     # ---------------------------------------------------------------
     # Calculate necessary quantities using the histogram of Qn vector results for a single event
     # --------------------------------------------------------------
-    def process_qnvector_histogram(self, event_id):
+    def process_qnvector_histogram(self, event_id, eta_cut, eta_min_ref, eta_max_ref):
         """
         This function processes 2D histograms (in pT * rapidity bins) of a single event
         and reduces them to 1D histograms in pT by summing contributions over rapidity (y) bins.
@@ -197,16 +206,16 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         # Reference lists in pT for a different rapidity range
         pt_ref_values = []
         dN_ref_values = []
-        vncos_ref_values = {n: [] for n in range(1, self.n_order)}
-        vnsin_ref_values = {n: [] for n in range(1, self.n_order)}
+        vncos_ref_values = {n: [] for n in range(1, self.norder)}
+        vnsin_ref_values = {n: [] for n in range(1, self.norder)}
 
         # Loop over pT bins
         for bin_x in range(1, self.hist_dN.GetNbinsX() + 1):
 
             pt = self.hist_dN.GetXaxis().GetBinCenter(bin_x)
             dN_sum, dN_ref_sum = 0.0, 0.0
-            vncos_ref_sum = {n: 0.0 for n in range(1, self.n_order)}
-            vnsin_ref_sum = {n: 0.0 for n in range(1, self.n_order)}
+            vncos_ref_sum = {n: 0.0 for n in range(1, self.norder)}
+            vnsin_ref_sum = {n: 0.0 for n in range(1, self.norder)}
 
             # Loop over rapidity bins
             for bin_y in range(1, self.hist_dN.GetNbinsY() + 1):
@@ -214,15 +223,15 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                 dN = self.hist_dN.GetBinContent(bin_x, bin_y)
 
                 # midrapidity multiplicity
-                if self.eta_min <= y <= self.eta_max:
+                if abs(y) < eta_cut:
                     dN_sum += dN
 
                 # reference particles
-                if self.eta_min_ref <= y <= self.eta_max_ref:
+                if eta_min_ref <= y <= eta_max_ref:
                     dN_ref_sum += dN
 
                     # Sum vncos and vnsin for each harmonic n, weighted by dN for the reference particles
-                    for n in range(1, self.n_order):
+                    for n in range(1, self.norder):
                         vncos_ref_sum[n] += self.hist_vncos[n].GetBinContent(bin_x, bin_y) * dN
                         vnsin_ref_sum[n] += self.hist_vnsin[n].GetBinContent(bin_x, bin_y) * dN
 
@@ -236,7 +245,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                 dN_ref_values.append(dN_ref_sum)
 
                 # Normalize vncos_ref_sum and vnsin_ref_sum by dN_ref_sum for each harmonic n
-                for n in range(1, self.n_order):
+                for n in range(1, self.norder):
                     vncos_ref_values[n].append(vncos_ref_sum[n] / dN_ref_sum if dN_ref_sum > 0 else 0.0)
                     vnsin_ref_values[n].append(vnsin_ref_sum[n] / dN_ref_sum if dN_ref_sum > 0 else 0.0)
 
@@ -254,14 +263,14 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         N_tot = np.sum(dN_values)
 
         # Calculate dN_ch/deta: N_tot divided by oversample number and rapidity window width
-        dNdeta = N_tot / self.n_oversample / (self.eta_max - self.eta_min)
+        dNdeta = N_tot / self.n_oversample / (2 * eta_cut)
 
         # III. Calculate quantities for flow calculations
 
         pt_ref_values = np.array(pt_ref_values)
         dN_ref_values = np.array(dN_ref_values)
 
-        for n in range(1, self.n_order):
+        for n in range(1, self.norder):
             vncos_ref_values[n] = np.array(vncos_ref_values[n])
             vnsin_ref_values[n] = np.array(vnsin_ref_values[n])
 
@@ -298,7 +307,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         Qn_ref_real_array = []
         Qn_ref_imag_array = []
 
-        for iorder in range(1, self.n_order):
+        for iorder in range(1, self.norder):
             vn_ref_real_interp = np.interp(pT_inte_array, pt_ref_values, vncos_ref_values[iorder])
             vn_ref_imag_interp = np.interp(pT_inte_array, pt_ref_values, vnsin_ref_values[iorder])
             vn_ref_real_inte = (
@@ -315,25 +324,25 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # ---------------------------------------------------------------
     # Calculate histograms for results
     # ---------------------------------------------------------------
-    def initialize_result_histograms(self, observable_type, observable, centrality, total_events):
-        base_name = f"h_{observable_type}_{observable}_{centrality}"
+    def initialize_result_histograms(self, observable_type, observable, method, centrality, total_events):
+        base_name = f"h_{observable_type}_{observable}_{method}_{centrality}"
         histograms = {}
 
         histograms['hist_dNdeta'] = ROOT.TH1F(f"{base_name}_dNchdeta", "Multiplicity; Event ID; Nch", total_events, 1, total_events + 1)
 
         histograms['hist_N_Qn_ref'] = ROOT.TH1F(f"{base_name}_N_Qn_ref", f"hist_N_Qn_ref; Event ID; N_Qn_ref", total_events, 1, total_events + 1)
-        histograms['hist_Qn_ref_real'] =  {n: ROOT.TH1F(f"{base_name}_Qn_ref_real_n{n}", f"Qn ref real (n={n}); Event ID; Qn_ref", total_events, 1, total_events + 1) for n in range(1, self.n_order)}
-        histograms['hist_Qn_ref_imag'] =  {n: ROOT.TH1F(f"{base_name}_Qn_ref_imag_n{n}", f"Qn ref imag (n={n}); Event ID; Qn_ref", total_events, 1, total_events + 1) for n in range(1, self.n_order)}
+        histograms['hist_Qn_ref_real'] =  {n: ROOT.TH1F(f"{base_name}_Qn_ref_real_n{n}", f"Qn ref real (n={n}); Event ID; Qn_ref", total_events, 1, total_events + 1) for n in range(1, self.norder)}
+        histograms['hist_Qn_ref_imag'] =  {n: ROOT.TH1F(f"{base_name}_Qn_ref_imag_n{n}", f"Qn ref imag (n={n}); Event ID; Qn_ref", total_events, 1, total_events + 1) for n in range(1, self.norder)}
 
         return histograms
 
     # ---------------------------------------------------------------
     # Fill histograms of results
     # ---------------------------------------------------------------
-    def fill_result_histograms(self, observable_type, observable, histograms, event_id, results):
+    def fill_result_histograms(self, histograms, event_id, results):
         histograms['hist_dNdeta'].Fill(event_id, results["dNdeta"])
         histograms['hist_N_Qn_ref'].Fill(event_id, results["N_Qn_ref"])
-        for n in range(1, self.n_order):
+        for n in range(1, self.norder):
             histograms['hist_Qn_ref_real'][n].Fill(event_id, results["Qn_ref_real"][n - 1])
             histograms['hist_Qn_ref_imag'][n].Fill(event_id, results["Qn_ref_imag"][n - 1])
 
@@ -392,6 +401,24 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
         total_events = len(all_events)
         return all_events, total_events
+
+    # ---------------------------------------------------------------
+    # Check if event centrality is within observable's centrality
+    # ---------------------------------------------------------------
+    def centrality_accepted(self, observable_centrality_list):
+
+        # AA
+        if self.is_AA:
+
+            for observable_centrality in observable_centrality_list:
+                if self.centrality[0] >= observable_centrality[0]:
+                    if self.centrality[1] <= observable_centrality[1]:
+                        return True
+            return False
+
+        # pp
+        else:
+            return True
 
 ##################################################################
 if __name__ == "__main__":

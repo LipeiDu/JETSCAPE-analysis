@@ -34,7 +34,7 @@ class PlotResults(common_base.CommonBase):
     # ---------------------------------------------------------------
     # Constructor
     # ---------------------------------------------------------------
-    def __init__(self, config_file='', input_file='', output_dir='', pp_ref_file='', **kwargs):
+    def __init__(self, config_file='', input_file='', output_dir='', pp_ref_file='', soft_ref_file='', **kwargs):
         super(PlotResults, self).__init__(**kwargs)
 
         if output_dir:
@@ -79,15 +79,12 @@ class PlotResults(common_base.CommonBase):
         self.power = self.config['power']
         self.pt_ref = self.config['pt_ref']
 
-        # Define the file path
-        file_path = '/home/jetscape-user/JETSCAPE-STAT-output/jetscape_user_5020_40_50_jet/jetscape_PbPb_Run0202_5020_0000_QnVector.root'
-
-        # Check if the file exists
-        if not os.path.exists(file_path):
-            print(f"Error: The file '{file_path}' does not exist.")
+        # Check if the file of reference soft particle exists
+        if not os.path.exists(soft_ref_file):
+            print(f"Error: The file '{soft_ref_file}' does not exist.")
         else:
             # Open the ROOT file
-            self.ref_input_file = ROOT.TFile(file_path, 'READ')
+            self.soft_ref_file = ROOT.TFile(soft_ref_file, 'READ')
 
         self.norder = self.config['norder']
 
@@ -625,10 +622,9 @@ class PlotResults(common_base.CommonBase):
         # Fetch reference flow vector histograms (shared across hole labels)
         # Avoid redundant retrieval for reference histograms
         if 'Qn_ref' not in self.observable_settings:
-            base_name = f"h_{observable_type}_{observable}_{centrality}"
-            base_name = f"h_soft_differential_v2_four_alice_{centrality}"
+            base_name = f"h_{observable_type}_{observable}_{method}_{centrality}"
 
-            self.observable_settings['jetscape_distribution']['h_N_ref'] = self.ref_input_file.Get(f"{base_name}_N_Qn_ref")
+            self.observable_settings['jetscape_distribution']['h_N_ref'] = self.soft_ref_file.Get(f"{base_name}_N_Qn_ref")
 
             self.observable_settings['jetscape_distribution']['h_Qn_ref_real'] = {}
             self.observable_settings['jetscape_distribution']['h_Qn_ref_imag'] = {}
@@ -636,8 +632,8 @@ class PlotResults(common_base.CommonBase):
             for n in range(1, self.norder): 
                 real_name_ref = f"{base_name}_Qn_ref_real_n{n}"
                 imag_name_ref = f"{base_name}_Qn_ref_imag_n{n}"
-                h_real_ref = self.ref_input_file.Get(real_name_ref)
-                h_imag_ref = self.ref_input_file.Get(imag_name_ref)
+                h_real_ref = self.soft_ref_file.Get(real_name_ref)
+                h_imag_ref = self.soft_ref_file.Get(imag_name_ref)
                 if h_real_ref:
                     h_real_ref.SetDirectory(0)
                     if not h_real_ref.GetSumw2():
@@ -1907,6 +1903,15 @@ if __name__ == '__main__':
         default='final_results.root',
         help='pp reference file'
     )
+    parser.add_argument(
+        '-s',
+        '--softRefFile',
+        action='store',
+        type=str,
+        metavar='softRefFile',
+        default='QnVector.root',
+        help='soft reference file'
+    )
 
     # Parse the arguments
     args = parser.parse_args()
@@ -1921,5 +1926,5 @@ if __name__ == '__main__':
         print('File "{0}" does not exist! Exiting!'.format(args.inputFile))
         sys.exit(0)
 
-    analysis = PlotResults(config_file=args.configFile, input_file=args.inputFile, output_dir=args.outputDir, pp_ref_file=args.refFile)
+    analysis = PlotResults(config_file=args.configFile, input_file=args.inputFile, output_dir=args.outputDir, pp_ref_file=args.refFile, soft_ref_file=args.softRefFile)
     analysis.plot_results()

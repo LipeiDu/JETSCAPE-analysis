@@ -20,6 +20,7 @@ import yaml
 import time
 from pathlib import Path
 from numba import jit
+import re  # Import regular expression module
 
 # Analysis
 import pandas as pd
@@ -34,6 +35,7 @@ import fjcontrib
 import fjext
 
 from jetscape_analysis.base import common_base
+from analyze_events_soft_ref import AnalyzeJetscapeEvents_Base  # Import soft ref analysis class
 
 ################################################################
 class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
@@ -77,10 +79,9 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
             run_info_path = _final_state_hadrons_path.parent / f"{_run_number}_info.yaml"
             with open(run_info_path, 'r') as f:
                 _run_info = yaml.safe_load(f)
-                # centrality_string = ['cent', '00', '01']#_run_info["index_to_hydro_event"][_file_index].split('/')[0].split('_')
-                centrality_string = _run_info["index_to_hydro_event"][_file_index].split('/')[0].split('_')
-                # index of 1 and 2 based on an example entry of "cent_00_01"
-                self.centrality = [int(centrality_string[1]), int(centrality_string[2])]
+
+                self.centrality = _run_info["centrality"]
+                self.soft_sector_execution_type = _run_info.get("soft_sector_execution_type", "")
 
         # If AA, initialize constituent subtractor
         self.constituent_subtractor = None
@@ -106,6 +107,25 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
     # Main processing function
     # ---------------------------------------------------------------
     def analyze_jetscape_events(self):
+
+        if self.soft_sector_execution_type == "RealTimeHydroSettings":
+            print("Running soft reference particle analysis...")
+
+            # Derive QnVector input and output files based on `input_file_hadrons`
+            qnvector_input_file = re.sub(r'final_state_hadrons_\d+', 'QnVector', str(self.input_file_hadrons)).replace(".parquet", ".dat")
+            qnvector_output_file = re.sub(r'final_state_hadrons_\d+', 'QnVector', str(self.input_file_hadrons)).replace(".parquet", ".root")
+
+            if not os.path.exists(qnvector_input_file):
+                raise FileNotFoundError(f"QnVector input file not found: {qnvector_input_file}")
+
+            # Run soft reference analysis
+            soft_ref_analysis = AnalyzeJetscapeEvents_Base(
+                config_file=self.config_file,  # Shared config file
+                input_file=qnvector_input_file,  # Derived QnVector.dat file
+                output_file=qnvector_output_file,  # Derived QnVector.root file
+                centrality=self.centrality  # Centrality passed from run info
+            )
+            soft_ref_analysis.analyze_jetscape_events()
 
         print('Analyzing events ...')
 
