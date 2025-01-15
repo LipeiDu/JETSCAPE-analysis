@@ -154,7 +154,6 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
         # Loop through events
         start = time.time()
         weight_sum = 0.
-        soft_v2_squared_sum = 0.
         for event_id, event in df_event_chunk.iterrows():
 
             if event_id % 1000 == 0:
@@ -172,14 +171,11 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
             # Fill the observables dict to a new entry in the event list
             event_weight = event['event_weight']
             weight_sum += event_weight
-            soft_particle_v2 = event['soft_v2']
-            soft_v2_squared_sum += soft_particle_v2 * soft_particle_v2
             if self.event_has_entries(self.observable_dict_event):
 
                 # Fill event cross-section weight
                 self.observable_dict_event['event_weight'] = event_weight
                 self.observable_dict_event['pt_hat'] = event['pt_hat']
-                self.observable_dict_event['soft_v2'] = soft_particle_v2
 
                 # Add event ID to the dictionary; histograms are saved event-by-event for vn calculations
                 self.observable_dict_event['event_id'] = event_id
@@ -191,7 +187,6 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
         self.cross_section_dict['cross_section_error'] = event['cross_section_error']
         self.cross_section_dict['n_events'] = self.n_event_max
         self.cross_section_dict['weight_sum'] = weight_sum
-        self.cross_section_dict['soft_v2_average'] = np.sqrt(soft_v2_squared_sum / self.n_event_max)
         if self.is_AA:
             self.cross_section_dict['centrality_min'] = self.centrality[0]
             self.cross_section_dict['centrality_max'] = self.centrality[1]
