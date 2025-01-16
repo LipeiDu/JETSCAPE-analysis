@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tqdm
 import yaml
+import awkward as ak
 
 # Analysis
 import itertools
@@ -81,9 +82,15 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # ---------------------------------------------------------------
     def run_jetscape_analysis(self):
 
-        # Read Qn vector data (common for all observables)
-        all_events, total_events = self.reader_ascii(self.input_file)
-        print(f"Total events in centrality {self.centrality}: {total_events}")
+        # Read Qn vector data from the input file (common for all observables; supports both ASCII and Parquet)
+        if self.input_file.endswith(".parquet"):
+            all_events, total_events = self.reader_parquet(self.input_file)
+            print(f"Total events in centrality {self.centrality} (Parquet): {total_events}")
+        elif self.input_file.endswith(".dat"):
+            all_events, total_events = self.reader_ascii(self.input_file)
+            print(f"Total events in centrality {self.centrality} (ASCII): {total_events}")
+        else:
+            raise ValueError(f"Unsupported file format: {self.input_file}. Only .dat and .parquet are supported.")
 
         # Open the ROOT file
         output_file = ROOT.TFile(self.output_file, "RECREATE")
@@ -119,7 +126,11 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
             # Initialize and fill Qn vector histograms of a single event (common for all observables)
             self.initialize_qnvector_histogram()
-            self.fill_qnvector_histogram(event)
+
+            if self.input_file.endswith(".parquet"):
+                self.fill_parquet_qnvector_histogram(event)
+            elif self.input_file.endswith(".dat"):
+                self.fill_ascii_qnvector_histogram(event)
 
             # Loop over observables for event-specific processing
             for (observable_type, observable, method, centrality), histograms in result_histograms.items():
@@ -158,7 +169,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # ---------------------------------------------------------------
     # Function to fill 2D histogram with Qn vector results for a single event
     # ---------------------------------------------------------------
-    def fill_qnvector_histogram(self, qnvector_results):
+    def fill_ascii_qnvector_histogram(self, qnvector_results):
         """
         In qnvector histograms, only dNdpTdy is averaged over oversamples; the other ones are summed over oversamples
 
@@ -179,6 +190,37 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                 vncos, vnsin = result[8 + (n - 1) * 4], result[10 + (n - 1) * 4]
                 self.hist_vncos[n].Fill(pt, y, vncos)
                 self.hist_vnsin[n].Fill(pt, y, vnsin)
+
+    def fill_parquet_qnvector_histogram(self, qnvector_results):
+        """
+        In qnvector histograms, only dNdpTdy is averaged over oversamples; the other ones are summed over oversamples.
+        """
+        # Loop over (N_pT X N_rapidity) entries of each event
+        # Note: only results for pid=9999 are read and passed to qnvector_results here
+
+        self.hist_dN = self.qnvector_histograms['hist_dN']
+        self.hist_vncos = self.qnvector_histograms['hist_vncos']
+        self.hist_vnsin = self.qnvector_histograms['hist_vnsin']
+
+        for result in qnvector_results:
+            pt = result.get("pT", None)
+            y = result.get("y", None)
+            dN = result.get("dN", None)
+
+            if dN is None or dN <= 0 or pt is None or y is None:
+                continue
+
+            self.hist_dN.Fill(pt, y, dN)
+
+            vn_cos_list = result.get("vn_cos", [])
+            vn_sin_list = result.get("vn_sin", [])
+
+            for n in range(1, self.norder):
+                if n - 1 < len(vn_cos_list) and n - 1 < len(vn_sin_list):
+                    vncos = vn_cos_list[n - 1]
+                    vnsin = vn_sin_list[n - 1]
+                    self.hist_vncos[n].Fill(pt, y, vncos)
+                    self.hist_vnsin[n].Fill(pt, y, vnsin)
 
     # ---------------------------------------------------------------
     # Clear output objects after processing each event
@@ -403,6 +445,29 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         return all_events, total_events
 
     # ---------------------------------------------------------------
+    # Reader of the Qn vector Parquet file
+    # ---------------------------------------------------------------
+    def reader_parquet(self, input_file):
+        """
+        This function reads Qn vector data from a Parquet file.
+        Each event is stored as a list of dictionaries, grouped by `event_ID`.
+        """
+        print(f"Reading Parquet file: {input_file}")
+
+        # Read the entire Parquet file into an awkward array
+        data = ak.from_parquet(input_file)
+
+        # Convert awkward array into a dictionary grouped by `event_ID`
+        all_events = {}
+        for event_id in np.unique(ak.to_numpy(data["event_ID"])):
+            event_mask = data["event_ID"] == event_id
+            event_data = data[event_mask].to_list()  # Convert to Python list for compatibility
+            all_events[int(event_id)] = event_data
+
+        total_events = len(all_events)
+        return all_events, total_events
+
+    # ---------------------------------------------------------------
     # Check if event centrality is within observable's centrality
     # ---------------------------------------------------------------
     def centrality_accepted(self, observable_centrality_list):
@@ -451,12 +516,25 @@ if __name__ == "__main__":
         default="/home/jetscape-user/JETSCAPE-analysis/TestOutput",
         help="Output directory for output to be written to",
     )
+    parser.add_argument(
+        "--centrality",
+        nargs=2,  # Accept two values (lower and upper centrality bounds)
+        type=int,
+        metavar=("CENT_MIN", "CENT_MAX"),
+        help="Centrality range as two integers, e.g., 40 50",
+        required=True,  # This ensures that the centrality argument is mandatory
+    )
 
     # Parse the arguments
     args = parser.parse_args()
 
-    print("Analyze the Qn vector to obtain event plane angles and v2s ...")
+    print(f"Analyze the Qn vector to obtain event plane angles and v2s for centrality {args.centrality}...")
 
     # Run the analysis
-    analysis = AnalyzeJetscapeEvents_Base(config_file=args.configFile, input_file=args.inputFilename, output_file=args.outputFilename)
+    analysis = AnalyzeJetscapeEvents_Base(
+        config_file=args.configFile,
+        input_file=args.inputFilename,
+        output_file=args.outputFilename,
+        centrality=args.centrality  # Pass centrality as a list of two integers
+    )
     analysis.analyze_jetscape_events()

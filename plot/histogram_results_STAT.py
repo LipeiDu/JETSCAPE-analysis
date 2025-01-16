@@ -74,7 +74,6 @@ class HistogramResults(common_base.CommonBase):
         self.weights = self.observables_df.get('event_weight', [])
         self.pt_hat = self.observables_df.get('pt_hat', [])
         self.event_id = self.observables_df.get('event_id', [])
-        self.soft_particle_v2 = self.observables_df.get('soft_v2', [])
 
         #------------------------------------------------------
         # Read cross-section file
@@ -84,7 +83,6 @@ class HistogramResults(common_base.CommonBase):
         self.cross_section_error = cross_section_df['cross_section_error'][0]
         self.n_events_generated = cross_section_df['n_events'][0]
         self.sum_weights = cross_section_df['weight_sum'][0]
-        self.soft_v2_average = cross_section_df['soft_v2_average'][0]
         if self.is_AA:
             self.centrality = [ int(cross_section_df['centrality_min'][0]), int(cross_section_df['centrality_max'][0]) ]
             self.observable_centrality_list = []
@@ -167,11 +165,6 @@ class HistogramResults(common_base.CommonBase):
                     h = ROOT.TH1F(f'h_weights_{centrality}', f'h_weights_{centrality}', bins.size-1, bins)
                     for weight in self.weights:
                         h.Fill(weight)
-                    self.output_list.append(h)
-
-                    # Save soft particle v2 average
-                    h = ROOT.TH1F(f'h_soft_v2_average_{centrality}', f'h_soft_v2_average_{centrality}', 1, 0, 1)
-                    h.SetBinContent(1, self.soft_v2_average)
                     self.output_list.append(h)
 
         # For pp, we can just save a single histogram for each

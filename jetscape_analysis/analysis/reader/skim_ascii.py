@@ -12,6 +12,7 @@ import argparse
 sys.path.append('.')
 
 from jetscape_analysis.analysis.reader import parse_ascii
+from jetscape_analysis.analysis.reader import parse_ascii_qnvector
 from jetscape_analysis.base import common_base
 
 ################################################################
@@ -35,10 +36,19 @@ class SkimAscii(common_base.CommonBase):
 
         # Create reader class for each chunk of events, and iterate through each chunk
         # The parser returns an awkward array of events
-        parse_ascii.parse_to_parquet(base_output_filename=self.output_dir,
-                                     store_only_necessary_columns=True,
-                                     input_filename=self.input_file,
-                                     events_per_chunk=self.events_per_chunk)
+        if "final_state_" in self.input_file:
+            parse_ascii.parse_to_parquet(
+                base_output_filename=self.output_dir,
+                store_only_necessary_columns=True,
+                input_filename=self.input_file,
+                events_per_chunk=self.events_per_chunk,
+            )
+        elif "QnVector" in self.input_file:
+            parse_ascii_qnvector.parse_qn_to_parquet(
+                base_output_filename=self.output_dir,
+                input_filename=self.input_file,
+                events_per_chunk=self.events_per_chunk,
+            )
 
 ##################################################################
 if __name__ == "__main__":

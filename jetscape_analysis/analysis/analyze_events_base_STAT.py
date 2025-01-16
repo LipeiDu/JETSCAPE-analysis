@@ -20,7 +20,6 @@ import yaml
 import time
 from pathlib import Path
 from numba import jit
-import re  # Import regular expression module
 
 # Analysis
 import pandas as pd
@@ -70,13 +69,13 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
 
         # If AA, get centrality bin
         if self.is_AA:
-            _final_state_hadrons_path = Path(self.input_file_hadrons)
+            self._final_state_hadrons_path = Path(self.input_file_hadrons)
             # For an example filename of "jetscape_PbPb_Run0005_5020_0001_final_state_hadrons_00.parquet",
             # - the run number is index 2
-            _run_number = _final_state_hadrons_path.stem.split("_")[2]
+            _run_number = self._final_state_hadrons_path.stem.split("_")[2]
             # - the file index is at index 4 (in the example, it extracts `1` as an int)
-            _file_index = int(_final_state_hadrons_path.name.split('_')[4])
-            run_info_path = _final_state_hadrons_path.parent / f"{_run_number}_info.yaml"
+            _file_index = int(self._final_state_hadrons_path.name.split('_')[4])
+            run_info_path = self._final_state_hadrons_path.parent / f"{_run_number}_info.yaml"
             with open(run_info_path, 'r') as f:
                 _run_info = yaml.safe_load(f)
 
@@ -112,8 +111,8 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
             print("Running soft reference particle analysis...")
 
             # Derive QnVector input and output files based on `input_file_hadrons`
-            qnvector_input_file = re.sub(r'final_state_hadrons_\d+', 'QnVector', str(self.input_file_hadrons)).replace(".parquet", ".dat")
-            qnvector_output_file = re.sub(r'final_state_hadrons_\d+', 'QnVector', str(self.input_file_hadrons)).replace(".parquet", ".root")
+            qnvector_input_file = str(self._final_state_hadrons_path).replace("final_state_hadrons", "QnVector")
+            qnvector_output_file = str(self._final_state_hadrons_path).replace("final_state_hadrons", "QnVector").replace(".parquet", ".root")
 
             if not os.path.exists(qnvector_input_file):
                 raise FileNotFoundError(f"QnVector input file not found: {qnvector_input_file}")
