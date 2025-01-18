@@ -623,11 +623,14 @@ class HistogramResults(common_base.CommonBase):
             # Create 2D histograms for Qn vector components with event ID as x-axis and pT bins as y-axis.
             h_total_NpT = None
 
+            # Calculate the range of event IDs
+            min_event_id = min(self.event_id)
+            max_event_id = max(self.event_id)
+
             # Case 1: Compute total_NpT only
             if compute_total_NpT_only:
                 h_total_NpT_name = f'h_{column_name}_NpT_{centrality}'
-                n_events = len(self.event_id)
-                h_total_NpT = ROOT.TH2F(h_total_NpT_name, h_total_NpT_name, n_events, 0.5, n_events + 0.5, len(bins) - 1, bins)
+                h_total_NpT = ROOT.TH2F(h_total_NpT_name, h_total_NpT_name, max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5, len(bins) - 1, bins)
                 h_total_NpT.Sumw2()
 
                 # Fill the total_NpT histogram
@@ -652,8 +655,7 @@ class HistogramResults(common_base.CommonBase):
 
             # Define histogram names
             hname = f'h_{column_name}_{centrality}'
-            n_events = len(self.event_id)
-            h_Qn_component = ROOT.TH2F(hname, hname, n_events, 0.5, n_events + 0.5, len(bins) - 1, bins)
+            h_Qn_component = ROOT.TH2F(hname, hname, max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5, len(bins) - 1, bins)
             h_Qn_component.Sumw2()
 
             # Fill the component histogram

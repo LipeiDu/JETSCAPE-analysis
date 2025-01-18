@@ -9,6 +9,7 @@ import sys
 import tqdm
 import yaml
 import awkward as ak
+from pathlib import Path
 
 # Analysis
 import itertools
@@ -26,15 +27,38 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # ---------------------------------------------------------------
     # Constructor
     # ---------------------------------------------------------------
-    def __init__(self, config_file="", input_file="", output_file="", centrality=None, **kwargs):
+    def __init__(self, config_file="", input_file="", output_dir="", **kwargs):
 
         super(AnalyzeJetscapeEvents_Base, self).__init__(**kwargs)
-        self.config_file = config_file
-        self.input_file = input_file
-        self.output_file = output_file
 
-        # centrality of the hydro event
-        self.centrality = centrality
+        # Initialize input, output, and config paths
+        self.config_file = config_file
+        self.input_file = Path(input_file)
+        self.output_dir = Path(output_dir)
+        
+        # Ensure output directory exists
+        if not self.output_dir.exists():
+            os.makedirs(self.output_dir)
+
+        # Generate the output file path by replacing ".parquet" with ".root"
+        self.output_file = self.output_dir / self.input_file.name.replace(".parquet", ".root")
+
+        # Read run info from the corresponding YAML file
+        self._Qn_vector_path = self.input_file
+        _run_number = self._Qn_vector_path.stem.split("_")[2]
+        _file_index = int(self._Qn_vector_path.name.split('_')[4])
+        run_info_path = self._Qn_vector_path.parent / f"{_run_number}_info.yaml"
+
+        if not run_info_path.exists():
+            raise FileNotFoundError(f"Run info file not found: {run_info_path}")
+
+        # Read and parse the YAML file
+        with open(run_info_path, 'r') as f:
+            _run_info = yaml.safe_load(f)
+
+        # Assign parameters from the YAML file
+        self.centrality = _run_info.get("centrality", None)
+        self.soft_sector_execution_type = _run_info.get("soft_sector_execution_type", None)
 
         self.initialize_config()
 
@@ -74,6 +98,8 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # ---------------------------------------------------------------
     def analyze_jetscape_events(self):
 
+        print(f"Analyze the Qn vector of the soft sector ...")
+
         # Read JETSCAPE Qn vector output and write histograms to ROOT file
         self.run_jetscape_analysis()
 
@@ -81,19 +107,20 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # Main processing function for events in a single event_QnVector.dat
     # ---------------------------------------------------------------
     def run_jetscape_analysis(self):
-
-        # Read Qn vector data from the input file (common for all observables; supports both ASCII and Parquet)
-        if self.input_file.endswith(".parquet"):
+        # Read Qn vector data
+        if self.input_file.suffix == ".parquet":
             all_events, total_events = self.reader_parquet(self.input_file)
-            print(f"Total events in centrality {self.centrality} (Parquet): {total_events}")
-        elif self.input_file.endswith(".dat"):
+        elif self.input_file.suffix == ".dat":
             all_events, total_events = self.reader_ascii(self.input_file)
-            print(f"Total events in centrality {self.centrality} (ASCII): {total_events}")
         else:
-            raise ValueError(f"Unsupported file format: {self.input_file}. Only .dat and .parquet are supported.")
+            raise ValueError(f"Unsupported file format: {self.input_file}")
+
+        print(f"Total events in centrality {self.centrality}: {total_events}")
+        min_event_id = min(all_events.keys())
+        max_event_id = max(all_events.keys())
 
         # Open the ROOT file
-        output_file = ROOT.TFile(self.output_file, "RECREATE")
+        output_file = ROOT.TFile(str(self.output_file), "RECREATE")
 
         # Prepare result histograms for all observables before processing events
         result_histograms = {}  # Store histograms for each observable
@@ -117,19 +144,20 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
                     # Initialize histograms for the observable
                     result_histograms[(observable_type, observable, method, tuple(self.centrality))] = self.initialize_result_histograms(
-                        observable_type, observable, method, self.centrality, total_events
+                        observable_type, observable, method, self.centrality, min_event_id, max_event_id
                     )
 
         # Process events and loop over observables
         for event_id, event in all_events.items():
-            print(f"Processing event_id: {event_id}, entries: {len(event)}")
+            if event_id % 1000 == 0:
+                print(f"Processing event_id: {event_id}, entries: {len(event)}")
 
             # Initialize and fill Qn vector histograms of a single event (common for all observables)
             self.initialize_qnvector_histogram()
 
-            if self.input_file.endswith(".parquet"):
+            if self.input_file.suffix == ".parquet":
                 self.fill_parquet_qnvector_histogram(event)
-            elif self.input_file.endswith(".dat"):
+            elif self.input_file.suffix == ".dat":
                 self.fill_ascii_qnvector_histogram(event)
 
             # Loop over observables for event-specific processing
@@ -366,15 +394,23 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # ---------------------------------------------------------------
     # Calculate histograms for results
     # ---------------------------------------------------------------
-    def initialize_result_histograms(self, observable_type, observable, method, centrality, total_events):
+    def initialize_result_histograms(self, observable_type, observable, method, centrality, min_event_id, max_event_id):
         base_name = f"h_{observable_type}_{observable}_{method}_{centrality}"
         histograms = {}
 
-        histograms['hist_dNdeta'] = ROOT.TH1F(f"{base_name}_dNchdeta", "Multiplicity; Event ID; Nch", total_events, 1, total_events + 1)
+        # Use min_event_id and max_event_id for the x-axis range
+        histograms['hist_dNdeta'] = ROOT.TH1F(f"{base_name}_dNchdeta", "Multiplicity; Event ID; Nch", max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5)
+        histograms['hist_N_Qn_ref'] = ROOT.TH1F(f"{base_name}_N_Qn_ref", "N_Qn_ref; Event ID; N_Qn_ref", max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5)
 
-        histograms['hist_N_Qn_ref'] = ROOT.TH1F(f"{base_name}_N_Qn_ref", f"hist_N_Qn_ref; Event ID; N_Qn_ref", total_events, 1, total_events + 1)
-        histograms['hist_Qn_ref_real'] =  {n: ROOT.TH1F(f"{base_name}_Qn_ref_real_n{n}", f"Qn ref real (n={n}); Event ID; Qn_ref", total_events, 1, total_events + 1) for n in range(1, self.norder)}
-        histograms['hist_Qn_ref_imag'] =  {n: ROOT.TH1F(f"{base_name}_Qn_ref_imag_n{n}", f"Qn ref imag (n={n}); Event ID; Qn_ref", total_events, 1, total_events + 1) for n in range(1, self.norder)}
+        histograms['hist_Qn_ref_real'] = {
+            n: ROOT.TH1F(f"{base_name}_Qn_ref_real_n{n}", f"Qn ref real (n={n}); Event ID; Qn_ref", max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5)
+            for n in range(1, self.norder)
+        }
+
+        histograms['hist_Qn_ref_imag'] = {
+            n: ROOT.TH1F(f"{base_name}_Qn_ref_imag_n{n}", f"Qn ref imag (n={n}); Event ID; Qn_ref", max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5)
+            for n in range(1, self.norder)
+        }
 
         return histograms
 
@@ -509,32 +545,21 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "-o",
-        "--outputFilename",
+        "--outputDir",
         action="store",
         type=str,
-        metavar="outputFilename",
+        metavar="outputDir",
         default="/home/jetscape-user/JETSCAPE-analysis/TestOutput",
         help="Output directory for output to be written to",
-    )
-    parser.add_argument(
-        "--centrality",
-        nargs=2,  # Accept two values (lower and upper centrality bounds)
-        type=int,
-        metavar=("CENT_MIN", "CENT_MAX"),
-        help="Centrality range as two integers, e.g., 40 50",
-        required=True,  # This ensures that the centrality argument is mandatory
     )
 
     # Parse the arguments
     args = parser.parse_args()
 
-    print(f"Analyze the Qn vector to obtain event plane angles and v2s for centrality {args.centrality}...")
-
     # Run the analysis
     analysis = AnalyzeJetscapeEvents_Base(
         config_file=args.configFile,
         input_file=args.inputFilename,
-        output_file=args.outputFilename,
-        centrality=args.centrality  # Pass centrality as a list of two integers
+        output_dir=args.outputDir
     )
     analysis.analyze_jetscape_events()

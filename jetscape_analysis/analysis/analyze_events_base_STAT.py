@@ -34,7 +34,6 @@ import fjcontrib
 import fjext
 
 from jetscape_analysis.base import common_base
-from analyze_events_soft_ref import AnalyzeJetscapeEvents_Base  # Import soft ref analysis class
 
 ################################################################
 class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
@@ -106,25 +105,6 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
     # Main processing function
     # ---------------------------------------------------------------
     def analyze_jetscape_events(self):
-
-        if self.soft_sector_execution_type == "RealTimeHydroSettings":
-            print("Running soft reference particle analysis...")
-
-            # Derive QnVector input and output files based on `input_file_hadrons`
-            qnvector_input_file = str(self._final_state_hadrons_path).replace("final_state_hadrons", "QnVector")
-            qnvector_output_file = str(self._final_state_hadrons_path).replace("final_state_hadrons", "QnVector").replace(".parquet", ".root")
-
-            if not os.path.exists(qnvector_input_file):
-                raise FileNotFoundError(f"QnVector input file not found: {qnvector_input_file}")
-
-            # Run soft reference analysis
-            soft_ref_analysis = AnalyzeJetscapeEvents_Base(
-                config_file=self.config_file,  # Shared config file
-                input_file=qnvector_input_file,  # Derived QnVector.dat file
-                output_file=qnvector_output_file,  # Derived QnVector.root file
-                centrality=self.centrality  # Centrality passed from run info
-            )
-            soft_ref_analysis.analyze_jetscape_events()
 
         print('Analyzing events ...')
 
