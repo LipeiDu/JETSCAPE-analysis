@@ -59,6 +59,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         # Assign parameters from the YAML file
         self.centrality = _run_info.get("centrality", None)
         self.soft_sector_execution_type = _run_info.get("soft_sector_execution_type", None)
+        self.n_oversample = _run_info.get("number_of_repeated_sampling", None)
 
         self.initialize_config()
 
@@ -73,8 +74,6 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         with open(self.config_file, 'r') as stream:
             self.config = yaml.safe_load(stream)
 
-        self.is_AA = True
-
         # parameters of Qn vector writer in JETSCAPE
         self.n_pt_bins = self.config['n_pt_bins']
         self.pt_min = self.config['pt_min']
@@ -83,7 +82,6 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         self.y_min = self.config['y_min']
         self.y_max = self.config['y_max']
         self.norder = self.config['norder']
-        self.n_oversample = self.config['n_oversample']
 
         # select charged particles in the Qn vector file
         self.selected_pid = self.config['selected_pid']
@@ -108,12 +106,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # ---------------------------------------------------------------
     def run_jetscape_analysis(self):
         # Read Qn vector data
-        if self.input_file.suffix == ".parquet":
-            all_events, total_events = self.reader_parquet(self.input_file)
-        elif self.input_file.suffix == ".dat":
-            all_events, total_events = self.reader_ascii(self.input_file)
-        else:
-            raise ValueError(f"Unsupported file format: {self.input_file}")
+        all_events, total_events = self.reader_parquet(self.input_file)
 
         print(f"Total events in centrality {self.centrality}: {total_events}")
         min_event_id = min(all_events.keys())
@@ -155,10 +148,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
             # Initialize and fill Qn vector histograms of a single event (common for all observables)
             self.initialize_qnvector_histogram()
 
-            if self.input_file.suffix == ".parquet":
-                self.fill_parquet_qnvector_histogram(event)
-            elif self.input_file.suffix == ".dat":
-                self.fill_ascii_qnvector_histogram(event)
+            self.fill_parquet_qnvector_histogram(event)
 
             # Loop over observables for event-specific processing
             for (observable_type, observable, method, centrality), histograms in result_histograms.items():
@@ -197,28 +187,6 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # ---------------------------------------------------------------
     # Function to fill 2D histogram with Qn vector results for a single event
     # ---------------------------------------------------------------
-    def fill_ascii_qnvector_histogram(self, qnvector_results):
-        """
-        In qnvector histograms, only dNdpTdy is averaged over oversamples; the other ones are summed over oversamples
-
-        """
-        # Loop over (N_pT X N_rapidity) entries of each event
-        # Note: only results for pid=9999 are read and passed to qnvector_results here
-
-        self.hist_dN = self.qnvector_histograms['hist_dN']
-        self.hist_vncos = self.qnvector_histograms['hist_vncos']
-        self.hist_vnsin = self.qnvector_histograms['hist_vnsin']
-
-        for result in qnvector_results:
-            pt, y, dN = result[1], result[3], result[-1]
-            if dN <= 0:
-                continue
-            self.hist_dN.Fill(pt, y, dN)
-            for n in range(1, self.norder):
-                vncos, vnsin = result[8 + (n - 1) * 4], result[10 + (n - 1) * 4]
-                self.hist_vncos[n].Fill(pt, y, vncos)
-                self.hist_vnsin[n].Fill(pt, y, vnsin)
-
     def fill_parquet_qnvector_histogram(self, qnvector_results):
         """
         In qnvector histograms, only dNdpTdy is averaged over oversamples; the other ones are summed over oversamples.
@@ -436,51 +404,6 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                 hist.Write()
 
     # ---------------------------------------------------------------
-    # Reader of the Qn vector file
-    # ---------------------------------------------------------------
-    def reader_ascii(self, input_file):
-        """
-        This function reads Qn vector data from the specified file.
-        Each event is stored in a dictionary with the event number as the key.
-        Each event has averaged over results of oversampled particle lists
-        """
-        all_events = {}
-        current_event = []
-        last_event_number = None
-
-        with open(input_file, 'r') as file:
-            for line in file:
-                stripped_line = line.strip()
-                if stripped_line.startswith("#"):
-                    if "Event" in stripped_line:
-                        event_number = int(stripped_line.split()[2])
-
-                        if current_event and last_event_number is not None:
-                            all_events[last_event_number] = current_event
-
-                        current_event = []
-                        last_event_number = event_number
-                    elif "\tEvent" in stripped_line and "End" in stripped_line:
-                        if current_event and last_event_number is not None:
-                            all_events[last_event_number] = current_event
-                        break
-                else:
-                    try:
-                        data = line.split()
-                        if int(data[0]) in self.selected_pid:
-                            numeric_data = [int(data[0])] + [float(x) for x in data[1:]]
-                            current_event.append(numeric_data)
-                    except IndexError:
-                        # Skip incomplete lines
-                        continue
-
-        if current_event and last_event_number is not None:
-            all_events[last_event_number] = current_event
-
-        total_events = len(all_events)
-        return all_events, total_events
-
-    # ---------------------------------------------------------------
     # Reader of the Qn vector Parquet file
     # ---------------------------------------------------------------
     def reader_parquet(self, input_file):
@@ -508,18 +431,11 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # ---------------------------------------------------------------
     def centrality_accepted(self, observable_centrality_list):
 
-        # AA
-        if self.is_AA:
-
-            for observable_centrality in observable_centrality_list:
-                if self.centrality[0] >= observable_centrality[0]:
-                    if self.centrality[1] <= observable_centrality[1]:
-                        return True
-            return False
-
-        # pp
-        else:
-            return True
+        for observable_centrality in observable_centrality_list:
+            if self.centrality[0] >= observable_centrality[0]:
+                if self.centrality[1] <= observable_centrality[1]:
+                    return True
+        return False
 
 ##################################################################
 if __name__ == "__main__":
