@@ -133,12 +133,12 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
         # Loop through events
         start = time.time()
         weight_sum = 0.
-        for event_id, event in df_event_chunk.iterrows():
+        for i, event in df_event_chunk.iterrows():
 
-            if event_id % 1000 == 0:
-                print(f'event: {event_id}    (time elapsed: {time.time() - start} s)')
+            if i % 1000 == 0:
+                print(f'event: {i}    (time elapsed: {time.time() - start} s)')
 
-            if event_id > self.n_event_max:
+            if i > self.n_event_max:
                 break
 
             # Store dictionary of all observables for the event
@@ -157,7 +157,7 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
                 self.observable_dict_event['pt_hat'] = event['pt_hat']
 
                 # Add event ID to the dictionary; histograms are saved event-by-event for vn calculations
-                self.observable_dict_event['event_id'] = event_id
+                self.observable_dict_event['event_id'] = event['event_ID']
 
                 self.output_event_list.append(self.observable_dict_event)
 
@@ -254,9 +254,6 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
     # ---------------------------------------------------------------
     def fill_fastjet_constituents(self, event, select_status=None, select_charged=False):
 
-        # Replace any instance of 27 in event['status'] with 0 (positive status)
-        event['status'] = np.where(event['status'] == 27, 0, event['status'])
-        
         # Construct indices according to particle status
         if select_status == '-':
             status_mask = (event['status'] < 0)
@@ -266,7 +263,8 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
             # Picked a value to make an all true mask. We don't select anything
             status_mask = event['status'] > -1e6
 
-        status_mask = status_mask & (event['status'] != 11)
+        # 11 for soft particles sampled from iSS, 27 for those from SMASH
+        status_mask = status_mask & (event['status'] != 11) & (event['status'] != 27)
 
         # Construct indices according to charge
         charged_mask = get_charged_mask(event['particle_ID'], select_charged)
