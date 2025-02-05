@@ -145,8 +145,6 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                 elif observable_type == 'hadron_correlations' and "v2" in observable:
                     # Loop through methods (EP, SP, etc.)
                     for method, method_block in block.items(): 
-                        if method == "four":
-                            continue
 
                         if not self.centrality_accepted(method_block['centrality']):
                             continue  # Skip if centrality doesn't match

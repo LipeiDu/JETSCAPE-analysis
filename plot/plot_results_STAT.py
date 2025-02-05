@@ -949,7 +949,9 @@ class PlotResults(common_base.CommonBase):
 
                     # Calculate integrated flow v2 using SP or 4-particle methods
                     # Determine which vn calculation method to use based on the input `method`
-                    if method == "sp":
+                    if method == "ep":
+                        vn_result = self.calculate_vnEP_diff(QnpT_diff_array, Qnref_array)
+                    elif method == "sp":
                         vn_result = self.calculate_vnSP_diff(QnpT_diff_array, Qnref_array)
                     elif method == "four":
                         vn_result = self.calculate_vn4_diff(QnpT_diff_array, Qnref_array)
@@ -1061,6 +1063,66 @@ class PlotResults(common_base.CommonBase):
     #-------------------------------------------------------------------------------------------
     # Functions for flow calculations
     #-------------------------------------------------------------------------------------------
+    def calculate_vnEP_diff(self, QnpT_diff, Qnref):
+        """
+        This function calculates the event-plane vn(pT) using the Event Plane (EP) method.
+        Assumption: No overlap between particles of interest and reference flow Qn vectors.
+        
+        Inputs:
+            QnpT_diff: [nev, norder, npT], flow vectors for particles of interest (POI) in each pT bin.
+            Qnref: [nev, norder], reference flow vectors for event plane reconstruction.
+        
+        Returns:
+            [vn{EP}(pT), vn{EP}(pT)_err]: Mean and error of vn{EP}(pT) for each harmonic order and pT bin.
+        """
+        QnpT_diff = np.array(QnpT_diff)
+        Qnref = np.array(Qnref)
+        nev, norder, npT = QnpT_diff.shape
+
+        vn_values = []
+        vn_errors = []
+
+        Nref = np.real(Qnref[:, 0])  # Number of reference particles
+        N2refPairs = Nref * (Nref - 1.)  # Number of reference particle pairs
+        NpTPOI = np.real(QnpT_diff[:, 0, :])  # Number of POI in each pT bin
+        N2POIPairs = NpTPOI * Nref.reshape(nev, 1)  # Number of POI-reference pairs
+
+        for iorder in range(1, norder):  # Loop over harmonic orders (n >= 1)
+            # Normalize reference flow vectors
+            QnRef_tmp = Qnref[:, iorder]
+            QnRef_norm = QnRef_tmp / np.abs(QnRef_tmp)  # QnA / |QnA|
+
+            # Compute event plane resolution: <QnA/|QnA| * QnB*/|QnB|>
+            n2ref = np.real(QnRef_norm * np.conj(QnRef_norm))  # QnA/|QnA| * QnA*/|QnA| = 1
+
+            # Compute numerator: <QnPOI * QnA*/|QnA|>
+            QnpT_tmp = QnpT_diff[:, iorder, :]
+            n2pT = np.real(QnpT_tmp * np.conj(QnRef_norm.reshape(nev, 1)))
+
+            # Calculate observables with Jackknife resampling
+            vnEPpT_arr = np.zeros([nev, npT])
+            for iev in range(nev):
+                array_idx = [True] * nev
+                array_idx[iev] = False
+                array_idx = np.array(array_idx)
+
+                # Event plane resolution term
+                Cn2ref_arr = np.mean(n2ref[array_idx]) / np.mean(N2refPairs[array_idx])
+
+                # vn{EP}(pT) for this event subset
+                vnEPpT_arr[iev, :] = (np.mean(n2pT[array_idx], 0) 
+                                      / (np.mean(N2POIPairs[array_idx], 0)+1.e-20)
+                                      / (np.sqrt(Cn2ref_arr))+1.e-20)
+
+            # Compute mean and error of vn{EP}(pT)
+            vnEPpT_mean = np.mean(vnEPpT_arr, 0)
+            vnEPpT_err = np.sqrt((nev - 1.) / nev * np.sum((vnEPpT_arr - vnEPpT_mean)**2., 0))
+
+            vn_values.append(vnEPpT_mean)
+            vn_errors.append(vnEPpT_err)
+
+        return [vn_values, vn_errors]
+
     def calculate_vnSP_diff(self, QnpT_diff, Qnref):
         """
             this funciton calculates the scalar-product vn
