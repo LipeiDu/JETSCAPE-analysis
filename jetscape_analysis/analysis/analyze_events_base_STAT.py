@@ -78,8 +78,17 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
             with open(run_info_path, 'r') as f:
                 _run_info = yaml.safe_load(f)
 
-                self.centrality = _run_info["centrality"]
+                self.full_centrality_range = _run_info["centrality"]
                 self.soft_sector_execution_type = _run_info.get("soft_sector_execution_type", "")
+
+                if self.soft_sector_execution_type == "precomputed_hydro":
+                    centrality_string = _run_info["index_to_hydro_event"][_file_index].split('/')[0].split('_')
+                    # index of 1 and 2 based on an example entry of "cent_00_01"
+                    self.default_centrality = [int(centrality_string[1]), int(centrality_string[2])]
+                    self.use_event_based_centrality = False  # Centrality is fixed
+
+                elif self.soft_sector_execution_type == "real_time_hydro":
+                    self.use_event_based_centrality = True  # Centrality varies per event
 
         # If AA, initialize constituent subtractor
         self.constituent_subtractor = None
@@ -144,6 +153,13 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
             # Store dictionary of all observables for the event
             self.observable_dict_event = {}
 
+            # Update self.centrality dynamically per event
+            if self.is_AA:
+                if self.use_event_based_centrality:
+                    self.centrality = [event['centrality']-0.5, event['centrality']+0.5]  # Dynamically set centrality; values are passed from the parquet file
+                else:
+                    self.centrality = self.default_centrality  # Use fixed centrality; values are passed from the Run_info.yaml file
+
             # Call user-defined function to analyze event
             self.analyze_event(event)
 
@@ -159,6 +175,11 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
                 # Add event ID to the dictionary; histograms are saved event-by-event for vn calculations
                 self.observable_dict_event['event_id'] = event['event_ID']
 
+                # Add event-wise centrality (same for all events in precomputed_hydro; varies event-by-event for real_time_hydro)
+                if self.is_AA:
+                    self.observable_dict_event['centrality_min'] = self.centrality[0]
+                    self.observable_dict_event['centrality_max'] = self.centrality[1]
+
                 self.output_event_list.append(self.observable_dict_event)
 
         # Get total cross-section (same for all events at this point), weight sum, and centrality
@@ -166,9 +187,11 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
         self.cross_section_dict['cross_section_error'] = event['cross_section_error']
         self.cross_section_dict['n_events'] = self.n_event_max
         self.cross_section_dict['weight_sum'] = weight_sum
+
         if self.is_AA:
-            self.cross_section_dict['centrality_min'] = self.centrality[0]
-            self.cross_section_dict['centrality_max'] = self.centrality[1]
+            # Full centrality range covering event-by-event centralities
+            self.cross_section_dict['full_centrality_min'] = self.full_centrality_range[0]
+            self.cross_section_dict['full_centrality_max'] = self.full_centrality_range[1]
 
     # ---------------------------------------------------------------
     # Initialize output objects

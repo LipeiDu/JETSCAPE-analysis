@@ -74,6 +74,7 @@ class HistogramResults(common_base.CommonBase):
         self.weights = self.observables_df.get('event_weight', [])
         self.pt_hat = self.observables_df.get('pt_hat', [])
         self.event_id = self.observables_df.get('event_id', [])
+        self.event_centrality = self.observables_df.get('centrality_min', [])
 
         #------------------------------------------------------
         # Read cross-section file
@@ -84,7 +85,7 @@ class HistogramResults(common_base.CommonBase):
         self.n_events_generated = cross_section_df['n_events'][0]
         self.sum_weights = cross_section_df['weight_sum'][0]
         if self.is_AA:
-            self.centrality = [ int(cross_section_df['centrality_min'][0]), int(cross_section_df['centrality_max'][0]) ]
+            self.full_centrality = [ int(cross_section_df['full_centrality_min'][0]), int(cross_section_df['full_centrality_max'][0]) ]
             self.observable_centrality_list = []
 
         print(f'xsec: {self.cross_section}')
@@ -194,8 +195,16 @@ class HistogramResults(common_base.CommonBase):
         # Save additional histograms for QA
 
         if self.is_AA:
+            # Histogram for full_centrality (global per file)
             h = ROOT.TH1F('h_centrality_generated', 'h_centrality_generated', 100, 0, 100)
-            h.SetBinContent(self.centrality[1], self.n_events_generated)
+            for i in range(self.full_centrality[0], self.full_centrality[1]):
+                h.SetBinContent(i+1, self.n_events_generated)
+            self.output_list.append(h)
+
+            # Histogram for event_centrality (event-specific)
+            h = ROOT.TH1F('h_event_centrality_generated', 'h_event_centrality_generated', 100, 0, 100)
+            for cent in self.event_centrality:
+                h.Fill(cent)
             self.output_list.append(h)
         else:
             h = ROOT.TH1F('h_n_events_generated', 'h_n_events_generated', 1, 0, 1)
@@ -700,8 +709,8 @@ class HistogramResults(common_base.CommonBase):
         # AA
         if self.is_AA:
 
-            if self.centrality[0] >= observable_centrality[0]:
-                if self.centrality[1] <= observable_centrality[1]:
+            if self.full_centrality[0] >= observable_centrality[0]:
+                if self.full_centrality[1] <= observable_centrality[1]:
                     return True
             return False
 
