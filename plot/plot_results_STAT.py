@@ -178,8 +178,8 @@ class PlotResults(common_base.CommonBase):
                         self.suffix = ''
 
                         # Initialize and plot the observable for each method
-                        self.init_observable(observable_type, observable, method_block, centrality, centrality_index, method=f'{method}')
-                        self.plot_observable(observable_type, observable, centrality, method=f'{method}')
+                        self.init_observable(observable_type, observable, method_block, centrality, centrality_index, method=f'_{method}')
+                        self.plot_observable(observable_type, observable, centrality, method=f'_{method}')
 
             # Handle dihadron_star separately (no methods loop)
             elif observable == 'dihadron_star':
@@ -492,7 +492,7 @@ class PlotResults(common_base.CommonBase):
 
                 # Subtract the holes (and save unsubtracted histogram)
                 # Handle nested dictionary for v2 histograms
-                if observable_type in ['hadron_correlations', 'dijet'] and 'v2' in observable:
+                if observable_type in ['hadron_correlations', 'dijet'] and 'v2' in observable and self.observable_settings['jetscape_distribution']:
                     self.observable_settings['jetscape_distribution_unsubtracted'] = {}
                     # Save unsubtracted h_N_pT
                     if self.observable_settings['jetscape_distribution']['h_N_pT']:
@@ -574,7 +574,7 @@ class PlotResults(common_base.CommonBase):
         else:
 
             # Get histogram
-            self.hname = f'h_{observable_type}_{observable}_{method}{self.suffix}{collection_label}_{centrality}{pt_suffix}'
+            self.hname = f'h_{observable_type}_{observable}{method}{self.suffix}{collection_label}_{centrality}{pt_suffix}'
             if self.hname in keys:
                 h_jetscape = self.input_file.Get(self.hname)
                 h_jetscape.SetDirectory(0)
@@ -596,22 +596,27 @@ class PlotResults(common_base.CommonBase):
           - Qnref: Reference flow vector histograms.
         """
 
-        # Initialize storage for this collection_label
+        # Fetch particle count histogram (Qn0 total)
+        h_N_pT_name = f'h_{observable_type}_{observable}{method}_Qn0_total{collection_label}_NpT_{centrality}'
+
+        if h_N_pT_name not in keys:
+            self.observable_settings[f'jetscape_distribution{collection_label}'] = None
+            # If the particle count histogram is missing, exit early
+            return
+
+        # Restore dictionary initialization since h_N_pT exists
         self.observable_settings[f'jetscape_distribution{collection_label}'] = {}
 
-        # Fetch particle count histogram (Qn0 total)
-        h_N_pT_name = f'h_{observable_type}_{observable}_{method}_Qn0_total{collection_label}_NpT_{centrality}'
-        if h_N_pT_name in keys:
-            h_N_pT = self.input_file.Get(h_N_pT_name)
-            h_N_pT.SetDirectory(0)
-            if not h_N_pT.GetSumw2():
-                h_N_pT.Sumw2()
-            self.observable_settings[f'jetscape_distribution{collection_label}']['h_N_pT'] = h_N_pT
+        h_N_pT = self.input_file.Get(h_N_pT_name)
+        h_N_pT.SetDirectory(0)
+        if not h_N_pT.GetSumw2():
+            h_N_pT.Sumw2()
+        self.observable_settings[f'jetscape_distribution{collection_label}']['h_N_pT'] = h_N_pT
 
         # Fetch Qn component histograms for each harmonic (real and imaginary)
         for n in range(1, self.norder):
             for component in ['real', 'imag']:
-                hname = f'h_{observable_type}_{observable}_{method}_Qn{n}_{component}{collection_label}_{centrality}'
+                hname = f'h_{observable_type}_{observable}{method}_Qn{n}_{component}{collection_label}_{centrality}'
                 if hname in keys:
                     h_Qn_component = self.input_file.Get(hname)
                     h_Qn_component.SetDirectory(0)
@@ -622,7 +627,7 @@ class PlotResults(common_base.CommonBase):
         # Fetch reference flow vector histograms (shared across hole labels)
         # Avoid redundant retrieval for reference histograms
         if 'Qn_ref' not in self.observable_settings:
-            base_name = f"h_{observable_type}_{observable}_{method}_{centrality}"
+            base_name = f"h_{observable_type}_{observable}{method}_{centrality}"
 
             self.observable_settings['jetscape_distribution']['h_N_ref'] = self.soft_ref_file.Get(f"{base_name}_N_Qn_ref")
 
@@ -879,8 +884,8 @@ class PlotResults(common_base.CommonBase):
 
             h = self.observable_settings[f'jetscape_distribution{collection_label}']
             if h:
-                h_num_name = f'h_{observable_type}_{observable}_{method}{self.suffix}{collection_label}_num_{centrality}'
-                h_denom_name = f'h_{observable_type}_{observable}_{method}{self.suffix}{collection_label}_{centrality}'
+                h_num_name = f'h_{observable_type}_{observable}{method}{self.suffix}{collection_label}_num_{centrality}'
+                h_denom_name = f'h_{observable_type}_{observable}{method}{self.suffix}{collection_label}_{centrality}'
 
                 self.observable_settings[f'jetscape_distribution{collection_label}'] = self.input_file.Get(h_num_name).Clone()
 
@@ -897,7 +902,7 @@ class PlotResults(common_base.CommonBase):
                 self.observable_settings[f'jetscape_distribution{collection_label}'].SetName(f'jetscape_distribution_{observable_type}_{observable}_{method}_{centrality}')
 
         # hadron v2
-        if observable_type in ['hadron_correlations'] and 'v2' in observable and self.is_AA:
+        if observable_type in ['hadron_correlations'] and 'v2' in observable and self.observable_settings[f'jetscape_distribution'] and self.is_AA:
 
             subtraction_labels = ['_unsubtracted', '']
             for subtraction_label in subtraction_labels:
@@ -906,88 +911,87 @@ class PlotResults(common_base.CommonBase):
                 poi_settings = self.observable_settings[f'jetscape_distribution{subtraction_label}']
                 ref_settings = self.observable_settings['jetscape_distribution']
 
-                if poi_settings and ref_settings:
-                    # POI
-                    h_N_pT = poi_settings['h_N_pT']
-                    h_Qn_component = {n: {
-                        'real': poi_settings[f'h_Qn{n}_real'],
-                        'imag': poi_settings[f'h_Qn{n}_imag']
-                    } for n in range(1, self.norder)}
+                # POI
+                h_N_pT = poi_settings['h_N_pT']
+                h_Qn_component = {n: {
+                    'real': poi_settings[f'h_Qn{n}_real'],
+                    'imag': poi_settings[f'h_Qn{n}_imag']
+                } for n in range(1, self.norder)}
 
-                    # reference
-                    h_N_ref = ref_settings['h_N_ref']
-                    h_Qn_ref_real = ref_settings['h_Qn_ref_real']
-                    h_Qn_ref_imag = ref_settings['h_Qn_ref_imag']
+                # reference
+                h_N_ref = ref_settings['h_N_ref']
+                h_Qn_ref_real = ref_settings['h_Qn_ref_real']
+                h_Qn_ref_imag = ref_settings['h_Qn_ref_imag']
 
-                    # Pack arrays in the format required by vn calculation functions
-                    # Prepare arrays for QnpT_diff and Qnref
-                    QnpT_diff_array, Qnref_array = [], []
+                # Pack arrays in the format required by vn calculation functions
+                # Prepare arrays for QnpT_diff and Qnref
+                QnpT_diff_array, Qnref_array = [], []
 
-                    # Loop over events
-                    for event_id in range(1, h_N_pT.GetNbinsX() + 1):
+                # Loop over events
+                for event_id in range(1, h_N_pT.GetNbinsX() + 1):
 
-                        # POI particle counts and Qn vectors
-                        N_pT = np.array([h_N_pT.GetBinContent(event_id, pt_bin) 
-                                            for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
-                        QnpT_diff_event = [N_pT]
-                        for n in range(1, self.norder):
-                            Qn_pT_real = np.array([h_Qn_component[n]['real'].GetBinContent(event_id, pt_bin)
-                                                   for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
-                            Qn_pT_imag = np.array([h_Qn_component[n]['imag'].GetBinContent(event_id, pt_bin)
-                                                   for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
-                            QnpT_diff_event.append(Qn_pT_real + 1j * Qn_pT_imag)
-                        QnpT_diff_array.append(QnpT_diff_event)
+                    # POI particle counts and Qn vectors
+                    N_pT = np.array([h_N_pT.GetBinContent(event_id, pt_bin) 
+                                        for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
+                    QnpT_diff_event = [N_pT]
+                    for n in range(1, self.norder):
+                        Qn_pT_real = np.array([h_Qn_component[n]['real'].GetBinContent(event_id, pt_bin)
+                                               for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
+                        Qn_pT_imag = np.array([h_Qn_component[n]['imag'].GetBinContent(event_id, pt_bin)
+                                               for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
+                        QnpT_diff_event.append(Qn_pT_real + 1j * Qn_pT_imag)
+                    QnpT_diff_array.append(QnpT_diff_event)
 
-                        # Reference particle counts and Qn vectors
-                        N_ref = h_N_ref.GetBinContent(event_id)
-                        Qnref_event = [N_ref]
-                        for n in range(1, self.norder):
-                            Qn_ref_real = h_Qn_ref_real[n].GetBinContent(event_id)
-                            Qn_ref_imag = h_Qn_ref_imag[n].GetBinContent(event_id)
-                            Qnref_event.append(Qn_ref_real + 1j * Qn_ref_imag)
-                        Qnref_array.append(Qnref_event)
+                    # Reference particle counts and Qn vectors
+                    N_ref = h_N_ref.GetBinContent(event_id)
+                    Qnref_event = [N_ref]
+                    for n in range(1, self.norder):
+                        Qn_ref_real = h_Qn_ref_real[n].GetBinContent(event_id)
+                        Qn_ref_imag = h_Qn_ref_imag[n].GetBinContent(event_id)
+                        Qnref_event.append(Qn_ref_real + 1j * Qn_ref_imag)
+                    Qnref_array.append(Qnref_event)
 
-                    # Calculate integrated flow v2 using SP or 4-particle methods
-                    # Determine which vn calculation method to use based on the input `method`
-                    if method == "ep":
-                        vn_result = self.calculate_vnEP_diff(QnpT_diff_array, Qnref_array)
-                    elif method == "sp":
-                        vn_result = self.calculate_vnSP_diff(QnpT_diff_array, Qnref_array)
-                    elif method == "four":
-                        vn_result = self.calculate_vn4_diff(QnpT_diff_array, Qnref_array)
-                    else:
-                        raise ValueError(f"Unsupported flow calculation method: {method}")
+                # Calculate integrated flow v2 using SP or 4-particle methods
+                # Determine which vn calculation method to use based on the input `method`
+                if method == "_ep":
+                    vn_result = self.calculate_vn_event_plane_diff(QnpT_diff_array, Qnref_array)
+                elif method == "_sp":
+                    vn_result = self.calculate_vn_scalar_product_diff(QnpT_diff_array, Qnref_array)
+                elif method == "_four":
+                    vn_result = self.calculate_vn_four_cumulant_diff(QnpT_diff_array, Qnref_array)
+                else:
+                    raise ValueError(f"Unsupported flow calculation method: {method}")
 
-                    # Extract the vn results and errors for all n
-                    vn_values = vn_result[0]
-                    vn_errors = vn_result[1]
+                # Extract the vn results and errors for all n
+                vn_values = vn_result[0]
+                vn_errors = vn_result[1]
 
-                    # Extract pT bin edges from the y-axis of h_N_pT
-                    pt_bin_edges = [
-                        h_N_pT.GetYaxis().GetBinLowEdge(pt_bin) for pt_bin in range(1, h_N_pT.GetNbinsY() + 2)
-                    ]
+                # Extract pT bin edges from the y-axis of h_N_pT
+                pt_bin_edges = [
+                    h_N_pT.GetYaxis().GetBinLowEdge(pt_bin) for pt_bin in range(1, h_N_pT.GetNbinsY() + 2)
+                ]
+                
+                num_pt_bins = len(pt_bin_edges) - 1  # Number of bins is one less than the number of edges
+                # Convert pt_bin_edges to a numpy array of type double
+                pt_bin_edges_array = np.array(pt_bin_edges, dtype='d')
+
+                # Save the results for each harmonic order in separate histograms
+                for n, (vn_vals, vn_errs) in enumerate(zip(vn_values, vn_errors), start=1):
                     
-                    num_pt_bins = len(pt_bin_edges) - 1  # Number of bins is one less than the number of edges
-                    # Convert pt_bin_edges to a numpy array of type double
-                    pt_bin_edges_array = np.array(pt_bin_edges, dtype='d')
+                    # Create a histogram for v_n at order n
+                    hname = f'h_{observable_type}_{observable}{method}_v{n}_{centrality}{subtraction_label}'
+                    h_vn = ROOT.TH1F(hname, hname, num_pt_bins, pt_bin_edges_array)  # Using array for bin edges
+                    h_vn.Sumw2()
 
-                    # Save the results for each harmonic order in separate histograms
-                    for n, (vn_vals, vn_errs) in enumerate(zip(vn_values, vn_errors), start=1):
-                        
-                        # Create a histogram for v_n at order n
-                        hname = f'h_{observable_type}_{observable}_{method}_v{n}_{centrality}{subtraction_label}'
-                        h_vn = ROOT.TH1F(hname, hname, num_pt_bins, pt_bin_edges_array)  # Using array for bin edges
-                        h_vn.Sumw2()
+                    # Fill the histogram with v_n values and errors
+                    for ibin, (vn_val, vn_err_val) in enumerate(zip(vn_vals, vn_errs), start=1):
+                        h_vn.SetBinContent(ibin, vn_val)
+                        h_vn.SetBinError(ibin, vn_err_val)
 
-                        # Fill the histogram with v_n values and errors
-                        for ibin, (vn_val, vn_err_val) in enumerate(zip(vn_vals, vn_errs), start=1):
-                            h_vn.SetBinContent(ibin, vn_val)
-                            h_vn.SetBinError(ibin, vn_err_val)
-
-                        # Save the histogram to observable_settings with a key indicating the harmonic order
-                        # We are only plotting v2, so we avoid having self.observable_settings[f'jetscape_distribution{collection_label}'][f'v{n}']
-                        if n == 2:
-                            self.observable_settings[f'jetscape_distribution{subtraction_label}'] = h_vn
+                    # Save the histogram to observable_settings with a key indicating the harmonic order
+                    # We are only plotting v2, so we avoid having self.observable_settings[f'jetscape_distribution{collection_label}'][f'v{n}']
+                    if n == 2:
+                        self.observable_settings[f'jetscape_distribution{subtraction_label}'] = h_vn
 
         # For the ATLAS rapidity-dependence, we need to divide the histograms by their first bin (|y|<0.3) to form a double ratio
         if observable == 'pt_y_atlas':
@@ -1063,7 +1067,7 @@ class PlotResults(common_base.CommonBase):
     #-------------------------------------------------------------------------------------------
     # Functions for flow calculations
     #-------------------------------------------------------------------------------------------
-    def calculate_vnEP_diff(self, QnpT_diff, Qnref):
+    def calculate_vn_event_plane_diff(self, QnpT_diff, Qnref):
         """
         This function calculates the event-plane vn(pT) using the Event Plane (EP) method.
         Assumption: No overlap between particles of interest and reference flow Qn vectors.
@@ -1123,7 +1127,7 @@ class PlotResults(common_base.CommonBase):
 
         return [vn_values, vn_errors]
 
-    def calculate_vnSP_diff(self, QnpT_diff, Qnref):
+    def calculate_vn_scalar_product_diff(self, QnpT_diff, Qnref):
         """
             this funciton calculates the scalar-product vn
             assumption: no overlap between particles of interest
@@ -1170,7 +1174,7 @@ class PlotResults(common_base.CommonBase):
 
         return [vn_values, vn_errors]
 
-    def calculate_vn4_diff(self, QnpT_diff, Qnref):
+    def calculate_vn_four_cumulant_diff(self, QnpT_diff, Qnref):
         """
             This function calculates the 4-particle vn(pT) using the scalar-product method.
             Assumption: No overlap between particles of interest and reference flow Qn vectors.
@@ -1260,7 +1264,7 @@ class PlotResults(common_base.CommonBase):
     #-------------------------------------------------------------------------------------------
     def plot_observable(self, observable_type, observable, centrality, method='', pt_suffix='', logy = False):
 
-        label = f'{observable_type}_{observable}_{method}{self.suffix}_{centrality}{pt_suffix}'
+        label = f'{observable_type}_{observable}{method}{self.suffix}_{centrality}{pt_suffix}'
 
         # for hadron v2
         if observable_type in ['hadron_correlations'] and 'v2' in observable:
@@ -1303,7 +1307,7 @@ class PlotResults(common_base.CommonBase):
             os.makedirs(output_dir)
 
         force_write = True        
-        filename = f'Data_{observable_type}_{observable}_{method}{self.suffix}_{centrality}{pt_suffix}.dat'
+        filename = f'Data_{observable_type}_{observable}{method}{self.suffix}_{centrality}{pt_suffix}.dat'
         outputfile = os.path.join(output_dir, filename)
         if force_write or not os.path.exists(outputfile):
 
@@ -1639,7 +1643,7 @@ class PlotResults(common_base.CommonBase):
         if self.skip_pp_ratio:
             text = 'skip ratio plot -- pp/AA binning mismatch'
             text_latex.DrawLatex(x, 0.93, text)
-        hname = f'h_{observable_type}_{observable}_{method}{self.suffix}_{centrality}{pt_suffix}'
+        hname = f'h_{observable_type}_{observable}{method}{self.suffix}_{centrality}{pt_suffix}'
         c.SaveAs(os.path.join(self.output_dir, f'{hname}{self.file_format}'))
         c.Close()
 
