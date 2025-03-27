@@ -500,43 +500,7 @@ class PlotResults(common_base.CommonBase):
                                          collection_label=hole_label, pt_suffix=pt_suffix, self_normalize=self_normalize)
 
                 # Subtract the holes (and save unsubtracted histogram)
-                # Handle nested dictionary for v2 histograms
-                if observable_type in ['hadron_correlations', 'dijet'] and 'v2' in observable and self.observable_settings['jetscape_distribution']:
-                    self.observable_settings['jetscape_distribution_unsubtracted'] = {}
-                    # Save unsubtracted h_N_pT
-                    if self.observable_settings['jetscape_distribution']['h_N_pT']:
-                        self.observable_settings['jetscape_distribution_unsubtracted']['h_N_pT'] = self.observable_settings['jetscape_distribution']['h_N_pT'].Clone()
-                        self.observable_settings['jetscape_distribution_unsubtracted']['h_N_pT'].SetName(
-                            f"{self.observable_settings['jetscape_distribution']['h_N_pT'].GetName()}_unsubtracted"
-                        )
-
-                    # Subtract h_N_pT
-                    if self.observable_settings['jetscape_distribution_holes']:
-                        if self.observable_settings['jetscape_distribution']['h_N_pT'] and self.observable_settings['jetscape_distribution_holes']['h_N_pT']:
-                            self.observable_settings['jetscape_distribution']['h_N_pT'].Add(self.observable_settings['jetscape_distribution_holes']['h_N_pT'], -1)
-
-                    # Save and subtract Qn vector components
-                    for n in range(1, self.norder):
-                        for component in ['real', 'imag']:
-                            key = f'h_Qn{n}_{component}'
-                            if self.observable_settings['jetscape_distribution'][key]:
-                                # Save unsubtracted version
-                                self.observable_settings['jetscape_distribution_unsubtracted'][key] = self.observable_settings['jetscape_distribution'][key].Clone()
-                                self.observable_settings['jetscape_distribution_unsubtracted'][key].SetName(
-                                    f"{self.observable_settings['jetscape_distribution'][key].GetName()}_unsubtracted"
-                                )
-                            # Subtract holes
-                            if self.observable_settings['jetscape_distribution_holes']:
-                                if self.observable_settings['jetscape_distribution'][key] and self.observable_settings['jetscape_distribution_holes'][key]:
-                                    self.observable_settings['jetscape_distribution'][key].Add(self.observable_settings['jetscape_distribution_holes'][key], -1)
-
-                # for all other observables, self.observable_settings[f'jetscape_distribution' is a single histogram object
-                else:
-                    if self.observable_settings[f'jetscape_distribution']:
-                        self.observable_settings['jetscape_distribution_unsubtracted'] = self.observable_settings[f'jetscape_distribution'].Clone()
-                        self.observable_settings['jetscape_distribution_unsubtracted'].SetName(f"{self.observable_settings['jetscape_distribution'].GetName()}_unsubtracted")
-                        if self.observable_settings['jetscape_distribution_holes']:
-                            self.observable_settings['jetscape_distribution'].Add(self.observable_settings['jetscape_distribution_holes'], -1)
+                self.subtract_hole_histograms(observable_type, observable)
 
                 # Perform any additional manipulations on scaled histograms
                 self.post_process_histogram(observable_type, observable, block, centrality, centrality_index, method)
@@ -910,6 +874,53 @@ class PlotResults(common_base.CommonBase):
                 h.Scale(1./integral)
             else:
                 print('WARNING: integral for self-normalization is 0')
+
+    #-------------------------------------------------------------------------------------------
+    # Subtract hole histograms from the primary JETSCAPE distributions,
+    # and optionally save the unsubtracted copy.
+    #-------------------------------------------------------------------------------------------
+    def subtract_hole_histograms(self, observable_type, observable):
+
+        # For v2 observables with Qn flow vectors (stored as dicts)
+        if observable_type in ['hadron_correlations', 'dijet'] and 'v2' in observable and self.observable_settings['jetscape_distribution']:
+            self.observable_settings['jetscape_distribution_unsubtracted'] = {}
+
+            # Save unsubtracted h_N_pT
+            if self.observable_settings['jetscape_distribution'].get('h_N_pT'):
+                self.observable_settings['jetscape_distribution_unsubtracted']['h_N_pT'] = self.observable_settings['jetscape_distribution']['h_N_pT'].Clone()
+                self.observable_settings['jetscape_distribution_unsubtracted']['h_N_pT'].SetName(
+                    f"{self.observable_settings['jetscape_distribution']['h_N_pT'].GetName()}_unsubtracted"
+                )
+
+            # Subtract h_N_pT
+            if self.observable_settings.get('jetscape_distribution_holes'):
+                if self.observable_settings['jetscape_distribution'].get('h_N_pT') and self.observable_settings['jetscape_distribution_holes'].get('h_N_pT'):
+                    self.observable_settings['jetscape_distribution']['h_N_pT'].Add(self.observable_settings['jetscape_distribution_holes']['h_N_pT'], -1)
+
+            # Save and subtract Qn vector components
+            for n in range(1, self.norder):
+                for component in ['real', 'imag']:
+                    key = f'h_Qn{n}_{component}'
+                    if self.observable_settings['jetscape_distribution'].get(key):
+                        # Save unsubtracted version
+                        self.observable_settings['jetscape_distribution_unsubtracted'][key] = self.observable_settings['jetscape_distribution'][key].Clone()
+                        self.observable_settings['jetscape_distribution_unsubtracted'][key].SetName(
+                            f"{self.observable_settings['jetscape_distribution'][key].GetName()}_unsubtracted"
+                        )
+                    # Subtract holes
+                    if self.observable_settings.get('jetscape_distribution_holes'):
+                        if self.observable_settings['jetscape_distribution'].get(key) and self.observable_settings['jetscape_distribution_holes'].get(key):
+                            self.observable_settings['jetscape_distribution'][key].Add(self.observable_settings['jetscape_distribution_holes'][key], -1)
+
+        # For all other observables (single TH1 histogram)
+        else:
+            if self.observable_settings.get('jetscape_distribution'):
+                self.observable_settings['jetscape_distribution_unsubtracted'] = self.observable_settings['jetscape_distribution'].Clone()
+                self.observable_settings['jetscape_distribution_unsubtracted'].SetName(
+                    f"{self.observable_settings['jetscape_distribution'].GetName()}_unsubtracted"
+                )
+                if self.observable_settings.get('jetscape_distribution_holes'):
+                    self.observable_settings['jetscape_distribution'].Add(self.observable_settings['jetscape_distribution_holes'], -1)
 
     #-------------------------------------------------------------------------------------------
     # Perform any additional manipulations on scaled histograms
