@@ -87,6 +87,8 @@ class PlotResults(common_base.CommonBase):
             self.soft_ref_file = ROOT.TFile(soft_ref_file, 'READ')
 
         self.norder = self.config['norder']
+        # A flag if pT spectra be plotted along with RAA
+        self.include_pT_spectra = False
 
         # If AA, set different options for hole subtraction treatment
         self.jet_collection_labels_AA = self.config['jet_collection_labels'] # + ['_shower_recoil_unsubtracted']
@@ -158,6 +160,13 @@ class PlotResults(common_base.CommonBase):
 
                 # Plot observable
                 self.plot_observable(observable_type, observable, centrality)
+
+                # If pT spectra is requested, plot it as well
+                if 'include_pT_spectra' in block and block['include_pT_spectra']:
+                    self.include_pT_spectra = True
+                    self.init_observable(observable_type, observable, block, centrality, centrality_index)
+                    self.plot_observable(observable_type, observable, centrality)
+                    self.include_pT_spectra = False  # Reset flag
 
     #-------------------------------------------------------------------------------------------
     # Plot hadron correlation observables
@@ -335,7 +344,7 @@ class PlotResults(common_base.CommonBase):
         #-----------------------------------------------------------
         # Initialize data distribution into self.observable_settings
         if 'hepdata' in block:
-            self.observable_settings['data_distribution'] = self.plot_utils.tgraph_from_hepdata(block, self.is_AA, self.sqrts, observable_type, observable, centrality_index, suffix=self.suffix, pt_suffix=pt_suffix)
+            self.observable_settings['data_distribution'] = self.plot_utils.tgraph_from_hepdata(block, self.is_AA, self.sqrts, observable_type, observable, centrality_index, suffix=self.suffix, pt_suffix=pt_suffix, pT_spectra=self.include_pT_spectra)
         elif 'custom_data' in block:
             self.observable_settings['data_distribution'] = self.plot_utils.tgraph_from_yaml(block, self.is_AA, self.sqrts, observable_type, observable, centrality_index, suffix=self.suffix, pt_suffix=pt_suffix)
         else:
@@ -583,7 +592,34 @@ class PlotResults(common_base.CommonBase):
 
             else:
                 h_jetscape = None
+
             self.observable_settings[f'jetscape_distribution{collection_label}'] = h_jetscape
+
+            # Fetch soft sector pT spectra if plotting pT spectra (only once for all collection_label)
+            if self.include_pT_spectra and 'jetscape_distribution_soft' not in self.observable_settings:
+                self.get_soft_sector_pT_histogram(observable_type, observable, centrality, method, pt_suffix)
+
+    #-------------------------------------------------------------------------------------------
+    # Construct and store soft sector pT spectra histograms
+    #-------------------------------------------------------------------------------------------
+    def get_soft_sector_pT_histogram(self, observable_type, observable, centrality, method='', pt_suffix=''):
+        """Retrieve the soft sector pT spectra from self.soft_ref_file and store it once."""
+
+        # Construct the histogram name
+        soft_hname = f'h_{observable_type}_{observable}{method}{self.suffix}_{centrality}{pt_suffix}_dNdpT'
+
+        # Try to retrieve the histogram from the soft_ref_file
+        h_soft = self.soft_ref_file.Get(soft_hname)
+
+        # Check if the retrieval was successful
+        if h_soft and isinstance(h_soft, ROOT.TH1):  # Ensures it's a valid histogram
+            h_soft.SetDirectory(0)
+            if not h_soft.GetSumw2():
+                h_soft.Sumw2()
+            self.observable_settings['jetscape_distribution_soft'] = h_soft  # Store only once
+        else:
+            print(f"WARNING: Histogram {soft_hname} not found in soft_ref_file.")
+            self.observable_settings['jetscape_distribution_soft'] = None  # Explicitly set to None if retrieval fails
 
     #-------------------------------------------------------------------------------------------
     # Construct all histograms required for v2 calculation.
@@ -626,6 +662,7 @@ class PlotResults(common_base.CommonBase):
 
         # Fetch reference flow vector histograms (shared across hole labels)
         # Avoid redundant retrieval for reference histograms
+        # They are saved only once with the key 'jetscape_distribution'
         if 'Qn_ref' not in self.observable_settings:
             base_name = f"h_{observable_type}_{observable}{method}_{centrality}"
 
@@ -1291,8 +1328,11 @@ class PlotResults(common_base.CommonBase):
         # If AA: Plot PbPb/pp ratio, and comparison to data
         # If pp: Plot distribution, and ratio to data
         if self.is_AA:
-            self.plot_RAA(observable_type, observable, centrality, label, pt_suffix=pt_suffix, logy=logy)
-            self.write_experimental_data(observable_type, observable, centrality, label, pt_suffix=pt_suffix)
+            if self.include_pT_spectra: # For hadron pT spectra
+                self.plot_pT_spectra(observable_type, observable, centrality, label, pt_suffix=pt_suffix, logy=True)
+            else: # For RAA
+                self.plot_RAA(observable_type, observable, centrality, label, pt_suffix=pt_suffix, logy=logy)
+                self.write_experimental_data(observable_type, observable, centrality, label, pt_suffix=pt_suffix)
         else:
             if self.observable_settings[f'jetscape_distribution']:
                 self.plot_distribution_and_ratio(observable_type, observable, centrality, label, pt_suffix=pt_suffix, logy=logy)
@@ -1461,6 +1501,120 @@ class PlotResults(common_base.CommonBase):
         text_latex.DrawLatex(x, 0.8, text)
 
         hname = f'h_{observable_type}_{observable}{self.suffix}_{centrality}{pt_suffix}'
+        c.SaveAs(os.path.join(self.output_dir, f'{hname}{self.file_format}'))
+        c.Close()
+
+    #-------------------------------------------------------------------------------------------
+    # Plot the transverse momentum (pT) spectra
+    #-------------------------------------------------------------------------------------------
+    def plot_pT_spectra(self, observable_type, observable, centrality, label, pt_suffix='', logy=True):
+        """
+        Plot the transverse momentum (pT) spectra, similar to plot_RAA but assuming self.skip_AA_ratio = True. We will not rescale jetscape distributions by pp results.
+        """
+
+        # Assemble the list of hole subtraction variations
+        keys_to_plot = [key for key in self.observable_settings.keys() if 'jetscape_distribution' in key and 'holes' not in key and 'soft' not in key]
+
+        self.jetscape_legend_label = {
+            'jetscape_distribution': 'JETSCAPE',
+            'jetscape_distribution_unsubtracted': 'JETSCAPE (unsubtracted)',
+            'jetscape_distribution_shower_recoil': 'JETSCAPE (shower+recoil)',
+            'jetscape_distribution_shower_recoil_unsubtracted': 'JETSCAPE (shower+recoil, unsubtracted)',
+            'jetscape_distribution_negative_recombiner': 'JETSCAPE (negative recombiner)',
+            'jetscape_distribution_constituent_subtraction': 'JETSCAPE (constituent subtraction)',
+        }
+
+        if not self.observable_settings[keys_to_plot[0]]:
+            print(f'WARNING: skipping {label} since data is missing')
+            return
+
+        c = ROOT.TCanvas('c_pT', 'pT Spectra', 600, 450)
+        c.SetRightMargin(0.05)
+        c.SetLeftMargin(0.15)
+        c.SetTopMargin(0.05)
+        c.SetBottomMargin(0.17)
+        c.cd()
+
+        if logy:
+            ROOT.gPad.SetLogy()
+        # ROOT.gPad.SetLogx()
+
+        legend = ROOT.TLegend(0.4, 0.55, 0.75, 0.81)
+        self.plot_utils.setup_legend(legend, 0.045, sep=-0.1)
+
+        # Use the pT distribution bins
+        self.bins = np.array(self.observable_settings[keys_to_plot[0]].GetXaxis().GetXbins())
+
+        myBlankHisto = ROOT.TH1F('myBlankHisto', 'Blank Histogram', 1, self.bins[0], self.bins[-1])
+        myBlankHisto.SetNdivisions(505)
+        myBlankHisto.SetXTitle(self.xtitle)
+        myBlankHisto.SetYTitle(self.ytitle)
+        myBlankHisto.SetMaximum(1.e4)
+        myBlankHisto.SetMinimum(2e-8)
+        myBlankHisto.GetXaxis().SetTitleSize(0.07)
+        myBlankHisto.GetYaxis().SetTitleSize(0.07)
+        myBlankHisto.GetXaxis().SetTitleOffset(1.)
+        myBlankHisto.GetYaxis().SetTitleOffset(1.)
+        myBlankHisto.Draw('E')
+        myBlankHisto.SetYTitle('#frac{1}{#it{N}_{event}} #frac{d^{2}#it{N}}{d#it{p}_{T}d#it{#eta}} #left[(GeV/c)^{-1}#right]')
+
+        # Draw experimental data if available
+        if self.observable_settings['data_distribution']:
+            self.output_dict[f'data_distribution_{label}'] = self.observable_settings['data_distribution']
+            self.observable_settings['data_distribution'].SetName(f'data_distribution_{label}')
+            self.observable_settings['data_distribution'].SetMarkerSize(self.marker_size)
+            self.observable_settings['data_distribution'].SetMarkerStyle(self.data_marker)
+            self.observable_settings['data_distribution'].SetMarkerColor(self.data_color)
+            self.observable_settings['data_distribution'].SetLineStyle(self.line_style)
+            self.observable_settings['data_distribution'].SetLineWidth(self.line_width)
+            self.observable_settings['data_distribution'].SetLineColor(self.data_color)
+            self.observable_settings['data_distribution'].Draw('PE Z same')
+            legend.AddEntry(self.observable_settings['data_distribution'], 'Data', 'PE')
+
+        # Draw JETSCAPE distributions
+        for i, key in enumerate(keys_to_plot):
+            self.output_dict[f'{key}_{label}'] = self.observable_settings[key]
+            if self.observable_settings[key]:
+                if self.observable_settings[key].GetNbinsX() > 1:
+                    self.observable_settings[key].SetFillColor(self.jetscape_color[i])
+                    self.observable_settings[key].SetFillColorAlpha(self.jetscape_color[i], self.jetscape_alpha[i])
+                    self.observable_settings[key].SetFillStyle(self.jetscape_fillstyle[i])
+                    self.observable_settings[key].SetMarkerSize(0.)
+                    self.observable_settings[key].SetMarkerStyle(0)
+                    self.observable_settings[key].SetLineWidth(0)
+                    self.observable_settings[key].DrawCopy('E3 same')
+                elif self.observable_settings[key].GetNbinsX() == 1:
+                    self.observable_settings[key].SetMarkerSize(self.marker_size)
+                    self.observable_settings[key].SetMarkerStyle(self.data_marker + 1)
+                    self.observable_settings[key].SetMarkerColor(self.jetscape_color[i])
+                    self.observable_settings[key].SetLineStyle(self.line_style)
+                    self.observable_settings[key].SetLineWidth(self.line_width)
+                    self.observable_settings[key].SetLineColor(self.jetscape_color[i])
+                    self.observable_settings[key].DrawCopy('PE same')
+                legend.AddEntry(self.observable_settings[key], self.jetscape_legend_label[key], 'f')
+
+        # Plot pT spectra of the soft sector
+        if 'jetscape_distribution_soft' in self.observable_settings and self.observable_settings['jetscape_distribution_soft']:
+            h_soft = self.observable_settings['jetscape_distribution_soft']
+            h_soft.SetMarkerSize(0)
+            h_soft.SetMarkerStyle(0)
+            h_soft.SetLineWidth(2)
+            h_soft.SetLineColor(self.jetscape_color[0])  # Use distinct color for soft sector
+            h_soft.SetLineStyle(1)  # Solid line
+            h_soft.DrawCopy('HIST SAME')
+            legend.AddEntry(h_soft, f'Soft Sector', 'l')
+
+        legend.Draw()
+
+        text_latex = ROOT.TLatex()
+        text_latex.SetNDC()
+        text_latex.SetTextSize(0.065)
+        text = f'#bf{{{observable_type}_{observable}}} #sqrt{{#it{{s}}}} = {self.sqrts/1000.} TeV'
+        text_latex.DrawLatex(0.18, 0.88, text)
+        text = f'{centrality} {self.suffix} {pt_suffix}'
+        text_latex.DrawLatex(0.18, 0.8, text)
+
+        hname = f'h_pT_{observable_type}_{observable}{self.suffix}_{centrality}{pt_suffix}'
         c.SaveAs(os.path.join(self.output_dir, f'{hname}{self.file_format}'))
         c.Close()
 

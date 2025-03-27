@@ -113,6 +113,14 @@ hadron:
     hepdata_AA_gname: ['Graph1D_y1', 'Graph1D_y2', 'Graph1D_y3', 'Graph1D_y4', 'Graph1D_y5', 'Graph1D_y6']
     hepdata_AA_hname: ['Hist1D_y1', 'Hist1D_y2', 'Hist1D_y3', 'Hist1D_y4', 'Hist1D_y5', 'Hist1D_y6']
     ytitle_AA: '#it{R}_{AA}'
+
+    # pT spectra data
+    include_pT_spectra: True
+    hepdata_pT_spectra_dir: 'Table 4'   # Location of pT spectra in HEPData
+    hepdata_pT_spectra_gname: 'Graph1D_y1'
+    ytitle_pT: '#frac{1}{#it{N}_{event}} #frac{d^{2}#it{N}}{d#it{p}_{T}d#it{#eta}} #left[(GeV/c)^{-1}#right]'
+    y_min_pT: 2e-8
+    y_max_pT: 1e4
   
   # https://www.hepdata.net/record/ins1759506 -- charged pions 
   pt_pi_alice:

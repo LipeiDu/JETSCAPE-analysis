@@ -118,7 +118,7 @@ class PlotUtils(common_base.CommonBase):
     # ---------------------------------------------------------------
     # Get tgraph from hepdata file specified in config block
     # ---------------------------------------------------------------
-    def tgraph_from_hepdata(self, block, is_AA, sqrts, observable_type, observable, centrality_index, suffix='', pt_suffix=''):
+    def tgraph_from_hepdata(self, block, is_AA, sqrts, observable_type, observable, centrality_index, suffix='', pt_suffix='', pT_spectra=False):
 
         # Open the HEPData file
         hepdata_dir = f'data/STAT/{sqrts}/{observable_type}/{observable}'
@@ -128,7 +128,32 @@ class PlotUtils(common_base.CommonBase):
         # Find the relevant directory:
         # - The list of dir/hist names may contain a suffix,
         #   which specifies e.g. the pt bin, jetR, or other parameters
+        # ----------------------------------------
+        # Case 1: Handling pT spectra
+        # ----------------------------------------
+        if pT_spectra:
+            if 'hepdata_pT_spectra_dir' in block:
+                dir_key = 'hepdata_pT_spectra_dir'
+            else:
+                return None  # No directory found for pT spectra
+            
+            if 'hepdata_pT_spectra_gname' in block:
+                g_key = 'hepdata_pT_spectra_gname'
+            else:
+                return None  # No graph name found for pT spectra
 
+            dir_name = block[dir_key]
+            g_name = block[g_key]
+
+            # Get the tgraph, and return the bins
+            dir = f.Get(dir_name)
+            g = dir.Get(g_name) if dir else None
+            f.Close()
+            return g
+
+        # ----------------------------------------
+        # Case 2: For all other cases (RAA, pp, etc)
+        # ----------------------------------------
         if is_AA:
             system = 'AA'
         else:
