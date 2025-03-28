@@ -62,10 +62,10 @@ def main():
 
     # Specify input directory containing final_state_hadrons files
     sqrts = 5020
-    
+
     soft_sector_analysis = True
 
-    final_state_hadron_dir = '/home/jetscape-user/JETSCAPE-STAT-output/Dirac_mar25/Run1010'
+    final_state_hadron_dir = '/home/jetscape-user/JETSCAPE-STAT-output/Dirac_mar25/Run1010_2'
     final_state_hadron_files = [file for file in os.listdir(final_state_hadron_dir) if 'jetscape' in file]
     system = final_state_hadron_files[0].split('_')[1]
 
@@ -104,6 +104,23 @@ def main():
         for file in os.listdir(inputdir):
             if 'observables' in file:
                 cmd = f'python3 plot/histogram_results_STAT.py -c config/STAT_{sqrts}.yaml -i {inputdir}/{file} -o {outputdir}'
+                print(cmd)
+                subprocess.run(cmd, check=True, shell=True)
+
+        if soft_sector_analysis:
+            # Analyze soft sector parquet files and obtain histogram root files
+            inputdir = final_state_hadron_dir
+            outputdir = final_state_hadron_dir
+
+            # Find all parquet files in the soft sector with "QnVector" in the name
+            parquet_files = [
+                file for file in os.listdir(inputdir)
+                if 'QnVector' in file and file.endswith('.parquet')
+            ]
+
+            for file in parquet_files:
+                input_path = os.path.join(inputdir, file)
+                cmd = f'python3 jetscape_analysis/analysis/analyze_events_soft_ref.py -c config/STAT_{sqrts}.yaml -i {input_path} -o {outputdir}'
                 print(cmd)
                 subprocess.run(cmd, check=True, shell=True)
 

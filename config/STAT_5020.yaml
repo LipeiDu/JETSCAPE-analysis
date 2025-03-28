@@ -116,7 +116,7 @@ hadron:
 
     # pT spectra data
     include_pT_spectra: True
-    hepdata_pT_spectra_dir: 'Table 4'   # Location of pT spectra in HEPData
+    hepdata_pT_spectra_dir: 'Table 2'   # Location of pT spectra in HEPData
     hepdata_pT_spectra_gname: 'Graph1D_y1'
     ytitle_pT: '#frac{1}{#it{N}_{event}} #frac{d^{2}#it{N}}{d#it{p}_{T}d#it{#eta}} #left[(GeV/c)^{-1}#right]'
     y_min_pT: 2e-8
