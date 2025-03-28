@@ -62,13 +62,15 @@ def main():
 
     # Specify input directory containing final_state_hadrons files
     sqrts = 5020
-    # final_state_hadron_dir = '/home/jetscape-user/JETSCAPE-STAT-output/Run0999'
-    final_state_hadron_dir = '/home/jetscape-user/JETSCAPE-STAT-output/Run0099_OSC'
+    
+    soft_sector_analysis = True
+
+    final_state_hadron_dir = '/home/jetscape-user/JETSCAPE-STAT-output/Dirac_mar25/Run1010'
     final_state_hadron_files = [file for file in os.listdir(final_state_hadron_dir) if 'jetscape' in file]
     system = final_state_hadron_files[0].split('_')[1]
 
     # If AA, supply pp reference results in order to construct RAA
-    pp_reference_filename = '/home/jetscape-user/JETSCAPE-STAT-output/pp/histograms.root'
+    pp_reference_filename = '/home/jetscape-user/JETSCAPE-STAT-output/STAT_designs/plot/5020_pp/final_results.root'
 
     # Note: the construction of observables and histograms is usually done on XSEDE,
     #       and only the merging/plotting step is needed to be run locally
@@ -87,7 +89,7 @@ def main():
             shutil.rmtree(observables_dir)
 
         for file in os.listdir(final_state_hadron_dir):
-            if 'final_state_hadrons' in file:
+            if 'final_state_hadrons' in file and file.endswith('.parquet'):
                 cmd = f'python3 jetscape_analysis/analysis/analyze_events_STAT.py -c config/STAT_{sqrts}.yaml -i {final_state_hadron_dir}/{file} -o {observables_dir}'
                 print(cmd)
                 subprocess.run(cmd, check=True, shell=True)
@@ -109,7 +111,7 @@ def main():
     # Merge histograms
     if merge_histograms:
 
-        # Merge
+        # Merge final state histograms (hard sector)
         inputdir = os.path.join(final_state_hadron_dir, 'histograms')
         outputdir = os.path.join(final_state_hadron_dir, 'plot')
         if not os.path.exists(outputdir):
@@ -123,16 +125,42 @@ def main():
                 cmd += f' {os.path.join(inputdir, file)}'
         subprocess.run(cmd, check=True, shell=True)
 
+        # Soft sector histogram merging (e.g., QnVector-based files)
+        if soft_sector_analysis:
+            # Find all files with "QnVector" and ".root" in their names
+            qnvector_files = [
+                file for file in os.listdir(final_state_hadron_dir)
+                if 'QnVector' in file and file.endswith('.root')
+            ]
+
+            # Define output file for soft sector
+            soft_fname = f'histograms_{system}_{sqrts}_soft_reference.root'
+            soft_reference_filename = os.path.join(outputdir, soft_fname)
+
+            # Construct and run the hadd command
+            qn_merge_cmd = f'hadd -f {soft_reference_filename}'
+            for file in qnvector_files:
+                qn_merge_cmd += f' {os.path.join(final_state_hadron_dir, file)}'
+            subprocess.run(qn_merge_cmd, check=True, shell=True)
+
+        else:
+            soft_reference_filename = ''
+
     #-----------------------------------------------------------------
     # Plot histograms
     if plot_histograms:
 
         inputdir = os.path.join(final_state_hadron_dir, 'plot')
         fname = f'histograms_{system}_{sqrts}_merged.root'
+        input_file = os.path.join(inputdir, fname)
+
         if system == 'pp':
-            cmd = f'python3 plot/plot_results_STAT.py -c config/STAT_{sqrts}.yaml -i {inputdir}/{fname}'
+            cmd = f'python3 plot/plot_results_STAT.py -c config/STAT_{sqrts}.yaml -i {input_file}'
         else:
-            cmd = f'python3 plot/plot_results_STAT.py -c config/STAT_{sqrts}.yaml -i {inputdir}/{fname} -r {pp_reference_filename}'
+            cmd = f'python3 plot/plot_results_STAT.py -c config/STAT_{sqrts}.yaml -i {input_file} -r {pp_reference_filename}'
+            if soft_sector_analysis:
+                cmd += f' -s {soft_reference_filename}'
+
         print(cmd)
         subprocess.run(cmd, check=True, shell=True)
 
