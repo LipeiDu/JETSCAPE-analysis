@@ -300,7 +300,7 @@ class AnalyzeJetscapeEvents_STAT(analyze_events_base_STAT.AnalyzeJetscapeEvents_
                                     if abs(pid) in [11, 13, 211, 321, 2212, 3222, 3112, 3312, 3334]:
 
                                         # Handle n = 0 for particle count
-                                        self.observable_dict_event[f'hadron_correlations_{observable}_{method}_Qn0_total{suffix}'].append([pt, 1])
+                                        self.observable_dict_event[f'hadron_correlations_{observable}_{method}_Qn0{suffix}'].append([pt, 1])
 
                                         # Loop over harmonics n >=1
                                         for n in range(1, self.norder):

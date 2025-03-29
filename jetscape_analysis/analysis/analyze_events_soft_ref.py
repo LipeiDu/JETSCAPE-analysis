@@ -277,9 +277,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                 if dNdpTdy is None or dNdpTdy <= 0 or pt is None or y is None:
                     continue
 
-                # Calculate dN/dpT/dy
-                dNpTdpTdy = dNdpTdy / pt if pt > 0 else 0 # dN/oversample/(dpTdy)/pT
-                self.hist_dNdpTdy.Fill(pt, y, dNpTdpTdy)
+                self.hist_dNdpTdy.Fill(pt, y, dNdpTdy)
 
         elif observable_type == 'hadron_correlations':
 
@@ -499,22 +497,22 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
             base_name = f"h_{observable_type}_{observable}_{centrality}"
 
             # For 'hadron' observable type, initialize histogram for pt only (not event-by-event)
-            histograms['hist_dNdpT'] = ROOT.TH1F(f"{base_name}_dNdpT", "dN/pTdpTdy; pT (GeV/c); dN/pTdpTdy", self.n_pt_bins, self.pt_min, self.pt_max)
+            histograms['hist_dNdpT'] = ROOT.TH1F(f"{base_name}", f"{base_name}", self.n_pt_bins, self.pt_min, self.pt_max)
 
         if observable_type == 'hadron_correlations' and "v2" in observable:
-            base_name = f"h_{observable_type}_{observable}_{method}_{centrality}"
+            base_name = f"h_{observable_type}_{observable}_{method}"
 
             # Use min_event_id and max_event_id for the x-axis range
-            histograms['hist_dNdeta'] = ROOT.TH1F(f"{base_name}_dNchdeta", "Multiplicity; Event ID; Nch", max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5)
-            histograms['hist_N_Qn_ref'] = ROOT.TH1F(f"{base_name}_N_Qn_ref", "N_Qn_ref; Event ID; N_Qn_ref", max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5)
+            histograms['hist_dNdeta'] = ROOT.TH1F(f"{base_name}_dNchdeta_{centrality}", f"{base_name}_dNchdeta_{centrality}", max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5)
+            histograms['hist_N_Qn_ref'] = ROOT.TH1F(f"{base_name}_Qn0_{centrality}_ref", f"{base_name}_Qn0_{centrality}_ref", max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5)
 
             histograms['hist_Qn_ref_real'] = {
-                n: ROOT.TH1F(f"{base_name}_Qn_ref_real_n{n}", f"Qn ref real (n={n}); Event ID; Qn_ref", max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5)
+                n: ROOT.TH1F(f"{base_name}_Qn{n}_real_{centrality}_ref", f"{base_name}_Qn{n}_real_{centrality}_ref", max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5)
                 for n in range(1, self.norder)
             }
 
             histograms['hist_Qn_ref_imag'] = {
-                n: ROOT.TH1F(f"{base_name}_Qn_ref_imag_n{n}", f"Qn ref imag (n={n}); Event ID; Qn_ref", max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5)
+                n: ROOT.TH1F(f"{base_name}_Qn{n}_imag_{centrality}_ref", f"{base_name}_Qn{n}_imag_{centrality}_ref", max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5)
                 for n in range(1, self.norder)
             }
 

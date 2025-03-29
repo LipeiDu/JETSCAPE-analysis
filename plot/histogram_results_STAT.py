@@ -261,7 +261,7 @@ class HistogramResults(common_base.CommonBase):
             """
             Helper function to compute h_total_NpT if not already done.
             """
-            h_total_NpT_name = f'h_{column_name}_NpT_{centrality}'
+            h_total_NpT_name = f'h_{column_name}_{centrality}'
             if not any(h.GetName() == h_total_NpT_name for h in self.output_list):
                 self.histogram_observable(
                     column_name=column_name,
@@ -285,12 +285,12 @@ class HistogramResults(common_base.CommonBase):
                             continue
 
                         # Compute h_total_NpT for the main data
-                        total_NpT_column = f'{observable_type}_{observable}_{method}_Qn0_total'
+                        total_NpT_column = f'{observable_type}_{observable}_{method}_Qn0'
                         h_total_NpT_name = compute_h_total_NpT(total_NpT_column, centrality, bins)
 
                         # Compute h_total_NpT for holes if in AA mode
                         if self.is_AA:
-                            total_NpT_holes_column = f'{observable_type}_{observable}_{method}_Qn0_total_holes'
+                            total_NpT_holes_column = f'{observable_type}_{observable}_{method}_Qn0_holes'
                             h_total_NpT_holes_name = compute_h_total_NpT(total_NpT_holes_column, centrality, bins)
 
                         # Loop over harmonics n
@@ -638,7 +638,7 @@ class HistogramResults(common_base.CommonBase):
 
             # Case 1: Compute total_NpT only
             if compute_total_NpT_only:
-                h_total_NpT_name = f'h_{column_name}_NpT_{centrality}'
+                h_total_NpT_name = f'h_{column_name}_{centrality}'
                 h_total_NpT = ROOT.TH2F(h_total_NpT_name, h_total_NpT_name, max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5, len(bins) - 1, bins)
                 h_total_NpT.Sumw2()
 

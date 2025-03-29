@@ -570,20 +570,19 @@ class PlotResults(common_base.CommonBase):
         """Retrieve the soft sector pT spectra from self.soft_ref_file and store it once."""
 
         # Construct the histogram name
-        soft_hname = f'h_{observable_type}_{observable}{method}{self.suffix}_{centrality}{pt_suffix}_dNdpT'
+        soft_hname = f'h_{observable_type}_{observable}_{centrality}'
 
-        # Try to retrieve the histogram from the soft_ref_file
-        h_soft = self.soft_ref_file.Get(soft_hname)
+        keys_soft = [key.ReadObj().GetTitle() for key in self.soft_ref_file.GetListOfKeys()]
 
-        # Check if the retrieval was successful
-        if h_soft and isinstance(h_soft, ROOT.TH1):  # Ensures it's a valid histogram
+        if soft_hname in keys_soft:
+            h_soft = self.soft_ref_file.Get(soft_hname)
             h_soft.SetDirectory(0)
             if not h_soft.GetSumw2():
                 h_soft.Sumw2()
-            self.observable_settings['jetscape_distribution_soft'] = h_soft  # Store only once
         else:
-            print(f"WARNING: Histogram {soft_hname} not found in soft_ref_file.")
-            self.observable_settings['jetscape_distribution_soft'] = None  # Explicitly set to None if retrieval fails
+            h_soft = None
+
+        self.observable_settings['jetscape_distribution_soft'] = h_soft
 
     #-------------------------------------------------------------------------------------------
     # Construct all histograms required for v2 calculation.
@@ -597,7 +596,7 @@ class PlotResults(common_base.CommonBase):
         """
 
         # Fetch particle count histogram (Qn0 total)
-        h_N_pT_name = f'h_{observable_type}_{observable}{method}_Qn0_total{collection_label}_NpT_{centrality}'
+        h_N_pT_name = f'h_{observable_type}_{observable}{method}_Qn0{collection_label}_{centrality}'
 
         if h_N_pT_name not in keys:
             self.observable_settings[f'jetscape_distribution{collection_label}'] = None
@@ -628,16 +627,18 @@ class PlotResults(common_base.CommonBase):
         # Avoid redundant retrieval for reference histograms
         # They are saved only once with the key 'jetscape_distribution'
         if 'Qn_ref' not in self.observable_settings:
-            base_name = f"h_{observable_type}_{observable}{method}_{centrality}"
 
-            self.observable_settings['jetscape_distribution']['h_N_ref'] = self.soft_ref_file.Get(f"{base_name}_N_Qn_ref")
+            keys_soft = [key.ReadObj().GetTitle() for key in self.soft_ref_file.GetListOfKeys()]
+            base_name = f"h_{observable_type}_{observable}{method}"
+
+            self.observable_settings['jetscape_distribution']['h_N_ref'] = self.soft_ref_file.Get(f"{base_name}_Qn0_{centrality}_ref")
 
             self.observable_settings['jetscape_distribution']['h_Qn_ref_real'] = {}
             self.observable_settings['jetscape_distribution']['h_Qn_ref_imag'] = {}
 
             for n in range(1, self.norder): 
-                real_name_ref = f"{base_name}_Qn_ref_real_n{n}"
-                imag_name_ref = f"{base_name}_Qn_ref_imag_n{n}"
+                real_name_ref = f"{base_name}_Qn{n}_real_{centrality}_ref"
+                imag_name_ref = f"{base_name}_Qn{n}_imag_{centrality}_ref"
                 h_real_ref = self.soft_ref_file.Get(real_name_ref)
                 h_imag_ref = self.soft_ref_file.Get(imag_name_ref)
                 if h_real_ref:
@@ -1548,7 +1549,7 @@ class PlotResults(common_base.CommonBase):
 
         if logy:
             ROOT.gPad.SetLogy()
-        # ROOT.gPad.SetLogx()
+        ROOT.gPad.SetLogx()
 
         legend = ROOT.TLegend(0.4, 0.55, 0.75, 0.81)
         self.plot_utils.setup_legend(legend, 0.045, sep=-0.1)
@@ -1560,7 +1561,7 @@ class PlotResults(common_base.CommonBase):
         myBlankHisto.SetNdivisions(505)
         myBlankHisto.SetXTitle(self.xtitle)
         myBlankHisto.SetYTitle(self.ytitle)
-        myBlankHisto.SetMaximum(1.e4)
+        myBlankHisto.SetMaximum(1.e5)
         myBlankHisto.SetMinimum(2e-8)
         myBlankHisto.GetXaxis().SetTitleSize(0.07)
         myBlankHisto.GetYaxis().SetTitleSize(0.07)
