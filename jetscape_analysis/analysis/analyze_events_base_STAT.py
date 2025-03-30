@@ -78,17 +78,22 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
             with open(run_info_path, 'r') as f:
                 _run_info = yaml.safe_load(f)
 
-                self.full_centrality_range = _run_info["centrality"]
-                self.soft_sector_execution_type = _run_info.get("soft_sector_execution_type", "")
+            self.full_centrality_range = _run_info["centrality"]
+            self.soft_sector_execution_type = _run_info.get("soft_sector_execution_type", "")
+            self.n_events_per_task = _run_info.get("n_events_per_task", None)
 
-                if self.soft_sector_execution_type == "precomputed_hydro":
-                    centrality_string = _run_info["index_to_hydro_event"][_file_index].split('/')[0].split('_')
-                    # index of 1 and 2 based on an example entry of "cent_00_01"
-                    self.default_centrality = [int(centrality_string[1]), int(centrality_string[2])]
-                    self.use_event_based_centrality = False  # Centrality is fixed
+            if self.soft_sector_execution_type == "precomputed_hydro":
+                centrality_string = _run_info["index_to_hydro_event"][_file_index].split('/')[0].split('_')
+                # index of 1 and 2 based on an example entry of "cent_00_01"
+                self.default_centrality = [int(centrality_string[1]), int(centrality_string[2])]
+                self.use_event_based_centrality = False  # Centrality is fixed
 
-                elif self.soft_sector_execution_type == "real_time_hydro":
-                    self.use_event_based_centrality = True  # Centrality varies per event
+            elif self.soft_sector_execution_type == "real_time_hydro":
+                self.use_event_based_centrality = True  # Centrality varies per event
+
+            # Calculate the offset for event IDs
+            self.original_data_file_index = _file_index  # Store the original data file index
+            self.event_id_offset = self.n_events_per_task * self.original_data_file_index
 
         # If AA, initialize constituent subtractor
         self.constituent_subtractor = None
@@ -173,7 +178,7 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
                 self.observable_dict_event['pt_hat'] = event['pt_hat']
 
                 # Add event ID to the dictionary; histograms are saved event-by-event for vn calculations
-                self.observable_dict_event['event_id'] = event['event_ID']
+                self.observable_dict_event['event_id'] = event['event_ID'] + self.event_id_offset # Adjust event IDs by adding the calculated offset
 
                 # Add event-wise centrality (same for all events in precomputed_hydro; varies event-by-event for real_time_hydro)
                 if self.is_AA:

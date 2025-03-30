@@ -60,6 +60,11 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         self.centrality = _run_info.get("centrality", None)
         self.soft_sector_execution_type = _run_info.get("soft_sector_execution_type", None)
         self.n_oversample = _run_info.get("number_of_repeated_sampling", None)
+        self.n_events_per_task = _run_info.get("n_events_per_task", None)
+
+        # Calculate the offset for event IDs
+        self.original_data_file_index = _file_index  # Store the original data file index
+        self.event_id_offset = self.n_events_per_task * self.original_data_file_index
 
         self.initialize_config()
 
@@ -568,6 +573,9 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
             # Use the mask to filter the data
             data = data[mask]
+
+        # Adjust event IDs by adding the calculated offset
+        data["event_ID"] = data["event_ID"] + self.event_id_offset
 
         # Convert awkward array into a dictionary grouped by `event_ID`
         all_events = {}
