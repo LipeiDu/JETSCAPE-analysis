@@ -5,12 +5,10 @@ import numpy as np
 from typing import Iterator, Union
 import attrs
 
-# Qn vector header info class
 @attrs.frozen
 class QnHeaderInfo:
     event_number: int = attrs.field()
 
-# Function to parse the Qn header line
 def _parse_qn_header_line(line: str) -> QnHeaderInfo:
     """Parse Qn vector event header line."""
     values = line.split()
@@ -19,7 +17,6 @@ def _parse_qn_header_line(line: str) -> QnHeaderInfo:
         return QnHeaderInfo(event_number=event_number)
     raise ValueError(f"Invalid Qn header format: {line}")
 
-# Function to parse Qn vector events
 def _parse_qn_event(f: Iterator[str]) -> Iterator[Union[QnHeaderInfo, np.ndarray]]:
     """Parse Qn vector events."""
     current_event = []
@@ -29,74 +26,66 @@ def _parse_qn_event(f: Iterator[str]) -> Iterator[Union[QnHeaderInfo, np.ndarray
         if stripped_line.startswith("#"):
             if "Event" in stripped_line and "End" not in stripped_line:
                 if current_event and event_header:
-                    yield event_header, np.array(current_event)
+                    yield event_header, np.array(current_event, dtype=np.float32)
                 event_header = _parse_qn_header_line(stripped_line)
                 current_event = []
             elif "End" in stripped_line:
                 if current_event and event_header:
-                    yield event_header, np.array(current_event)
+                    yield event_header, np.array(current_event, dtype=np.float32)
                 break
         else:
-            # Convert line to numeric array
             data = [float(x) if i else int(x) for i, x in enumerate(line.split())]
             current_event.append(data)
 
-# Function to read Qn vector events in chunks
 def read_qn_events_in_chunks(filename: Path, events_per_chunk: int = 10000) -> Iterator[dict]:
     """Read Qn vector events in chunks."""
     filename = Path(filename)
     with open(filename, "r") as f:
         read_lines = iter(f)
         current_chunk = {"event_headers": [], "particle_data": []}
+        event_count = 0
 
         for header, particles in _parse_qn_event(read_lines):
+            # Directly append without creating intermediate lists
             current_chunk["event_headers"].append(header.event_number)
             current_chunk["particle_data"].append(particles)
 
-            # Save chunk once it reaches the limit
-            if len(current_chunk["event_headers"]) >= events_per_chunk:
+            event_count += 1
+            if event_count >= events_per_chunk:
                 yield current_chunk
                 current_chunk = {"event_headers": [], "particle_data": []}
+                event_count = 0
 
         if current_chunk["event_headers"]:
             yield current_chunk
 
-# Convert chunk to awkward array and save to Parquet
 def parse_qn_to_parquet(base_output_filename: str, input_filename: str, events_per_chunk: int):
     """Parse Qn vector ASCII and convert it to Parquet."""
     base_output_filename = Path(base_output_filename)
     base_output_filename.parent.mkdir(parents=True, exist_ok=True)
 
     for i, chunk in enumerate(read_qn_events_in_chunks(input_filename, events_per_chunk)):
-        # Convert data to numpy array for easier slicing
-        particle_data = np.concatenate(chunk["particle_data"])
+        # Directly stack without creating intermediate lists
+        particle_data = np.vstack(chunk["particle_data"])
 
-        # Number of harmonic orders (based on the number of vn columns)
-        n_harmonics = (particle_data.shape[1] - 8) // 4  # 4 columns per harmonic: vncos, vncos_err, vnsin, vnsin_err
+        n_harmonics = (particle_data.shape[1] - 8) // 4
 
-        # Prepare lists for vn data
-        vn_cos = []
-        vn_cos_err = []
-        vn_sin = []
-        vn_sin_err = []
+        # Pre-allocate arrays for vn data to avoid intermediate list creation
+        vn_cos = np.zeros((particle_data.shape[0], n_harmonics), dtype=np.float32)
+        vn_cos_err = np.zeros((particle_data.shape[0], n_harmonics), dtype=np.float32)
+        vn_sin = np.zeros((particle_data.shape[0], n_harmonics), dtype=np.float32)
+        vn_sin_err = np.zeros((particle_data.shape[0], n_harmonics), dtype=np.float32)
 
-        for n in range(1, n_harmonics + 1):
-            vn_cos.append(particle_data[:, 8 + (n - 1) * 4].astype(np.float32))
-            vn_cos_err.append(particle_data[:, 9 + (n - 1) * 4].astype(np.float32))
-            vn_sin.append(particle_data[:, 10 + (n - 1) * 4].astype(np.float32))
-            vn_sin_err.append(particle_data[:, 11 + (n - 1) * 4].astype(np.float32))
+        for n in range(n_harmonics):
+            vn_cos[:, n] = particle_data[:, 8 + n * 4]
+            vn_cos_err[:, n] = particle_data[:, 9 + n * 4]
+            vn_sin[:, n] = particle_data[:, 10 + n * 4]
+            vn_sin_err[:, n] = particle_data[:, 11 + n * 4]
 
-        # Stack vn values into lists grouped by events
-        vn_cos_grouped = np.column_stack(vn_cos)
-        vn_cos_err_grouped = np.column_stack(vn_cos_err)
-        vn_sin_grouped = np.column_stack(vn_sin)
-        vn_sin_err_grouped = np.column_stack(vn_sin_err)
-
-        # Extract dN (last column)
         dN_column_index = 8 + n_harmonics * 4
         dN = particle_data[:, dN_column_index].astype(np.int32)
 
-        # Create awkward array with all information
+        # Efficiently use Awkward Array for structured data
         ak_array = ak.Array({
             "event_ID": np.repeat(chunk["event_headers"], [len(p) for p in chunk["particle_data"]]),
             "pid": particle_data[:, 0].astype(np.int32),
@@ -107,16 +96,12 @@ def parse_qn_to_parquet(base_output_filename: str, input_filename: str, events_p
             "ET": particle_data[:, 5].astype(np.float32),
             "dNdpTdy": particle_data[:, 6].astype(np.float32),
             "dNdpTdy_err": particle_data[:, 7].astype(np.float32),
-            "vn_cos": ak.from_numpy(vn_cos_grouped),
-            "vn_cos_err": ak.from_numpy(vn_cos_err_grouped),
-            "vn_sin": ak.from_numpy(vn_sin_grouped),
-            "vn_sin_err": ak.from_numpy(vn_sin_err_grouped),
+            "vn_cos": ak.from_numpy(vn_cos),
+            "vn_cos_err": ak.from_numpy(vn_cos_err),
+            "vn_sin": ak.from_numpy(vn_sin),
+            "vn_sin_err": ak.from_numpy(vn_sin_err),
             "dN": dN,
         })
 
-        # Save the Parquet file
         output_filename = base_output_filename.with_name(f"{base_output_filename.stem}_{i:02}.parquet")
         ak.to_parquet(ak_array, str(output_filename), compression="zstd")
-
-        # print(f"Saved chunk {i + 1} to {output_filename}")
-
