@@ -74,7 +74,8 @@ class HistogramResults(common_base.CommonBase):
         self.weights = self.observables_df.get('event_weight', [])
         self.pt_hat = self.observables_df.get('pt_hat', [])
         self.event_id = self.observables_df.get('event_id', [])
-        self.event_centrality = self.observables_df.get('centrality_min', [])
+        self.event_centrality_min = self.observables_df.get('centrality_min', [])
+        self.event_centrality_max = self.observables_df.get('centrality_max', [])
 
         #------------------------------------------------------
         # Read cross-section file
@@ -203,7 +204,7 @@ class HistogramResults(common_base.CommonBase):
 
             # Histogram for event_centrality (event-specific)
             h = ROOT.TH1F('h_event_centrality_generated', 'h_event_centrality_generated', 100, 0, 100)
-            for cent in self.event_centrality:
+            for cent in self.event_centrality_min:
                 h.Fill(cent)
             self.output_list.append(h)
         else:
@@ -257,7 +258,7 @@ class HistogramResults(common_base.CommonBase):
         print()
         print(f'Histogram {observable_type} observables...')
 
-        def compute_h_total_NpT(column_name, centrality, bins, compute_total_NpT_only=True):
+        def compute_h_total_NpT(column_name, centrality, bins):
             """
             Helper function to compute h_total_NpT if not already done.
             """
@@ -267,7 +268,7 @@ class HistogramResults(common_base.CommonBase):
                     column_name=column_name,
                     bins=bins,
                     centrality=centrality,
-                    compute_total_NpT_only=compute_total_NpT_only,
+                    compute_total_NpT_only=True,
                 )
             return h_total_NpT_name
 
@@ -608,18 +609,28 @@ class HistogramResults(common_base.CommonBase):
     #-------------------------------------------------------------------------------------------
     def histogram_1d_observable(self, col, column_name=None, bins=None, centrality=None, pt_suffix='', observable=''):
 
-        hname = f'h_{column_name}{observable}_{centrality}{pt_suffix}'
-        h = ROOT.TH1F(hname, hname, len(bins)-1, bins)
-        h.Sumw2()
+        # Flag to check if any valid event exists
+        has_valid_event = False
+        h = None
 
-        # Fill histogram
-        for i,_ in enumerate(col):
+        # Check for valid events and fill histogram
+        for i, _ in enumerate(col):
             if col[i] is not None:
+                # Check if the current event's centrality is accepted
+                if not self.centrality_accepted(centrality, event_index=i):
+                    continue
+                # Create histogram only when the first valid event is found
+                if not has_valid_event:
+                    hname = f'h_{column_name}{observable}_{centrality}{pt_suffix}'
+                    h = ROOT.TH1F(hname, hname, len(bins) - 1, bins)
+                    h.Sumw2()
+                    has_valid_event = True
                 for value in col[i]:
                     h.Fill(value, self.weights[i])
 
-        # Save histogram to output list
-        self.output_list.append(h)
+        # Save histogram only if it contains at least one valid event
+        if has_valid_event:
+            self.output_list.append(h)
 
     #-------------------------------------------------------------------------------------------
     # Histogram a single observable
@@ -629,89 +640,129 @@ class HistogramResults(common_base.CommonBase):
 
         # Check if the observable is v2-related
         if "hadron_correlations_v2" in column_name or "dijet_v2" in column_name:
-            # Create 2D histograms for Qn vector components with event ID as x-axis and pT bins as y-axis.
+            # Initialize histogram variables
             h_total_NpT = None
+            h_Qn_component = None
 
             # Calculate the range of event IDs
             min_event_id = min(self.event_id)
             max_event_id = max(self.event_id)
 
+            has_valid_event = False
+
             # Case 1: Compute total_NpT only
             if compute_total_NpT_only:
                 h_total_NpT_name = f'h_{column_name}_{centrality}'
-                h_total_NpT = ROOT.TH2F(h_total_NpT_name, h_total_NpT_name, max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5, len(bins) - 1, bins)
-                h_total_NpT.Sumw2()
 
-                # Fill the total_NpT histogram
+                # Lazy initialization: Create histogram only if there is a valid event
                 for i, particle_data in enumerate(col):
                     if particle_data is not None:
+                        # Check if the current event's centrality is accepted
+                        if not self.centrality_accepted(centrality, event_index=i):
+                            continue
+
+                        # Create histogram only if the first valid event is found
+                        if not has_valid_event:
+                            h_total_NpT = ROOT.TH2F(h_total_NpT_name, h_total_NpT_name, 
+                                                    max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5, 
+                                                    len(bins) - 1, bins)
+                            h_total_NpT.Sumw2()
+                            has_valid_event = True
+
+                        # Fill the total_NpT histogram
                         event_id = self.event_id[i]
                         for value in particle_data:
                             pt = value[0]  # pT value
                             h_total_NpT.Fill(event_id, pt, 1)  # Increment particle count
 
-                # Append the total_NpT histogram to the output list
-                if h_total_NpT_name not in [h.GetName() for h in self.output_list]:
+                # Append the total_NpT histogram to the output list if it was created
+                if has_valid_event and h_total_NpT_name not in [h.GetName() for h in self.output_list]:
                     self.output_list.append(h_total_NpT)
 
                 return
 
-            # Case 2: Normalize Qn vectors using precomputed total_NpT
-            if h_total_NpT_name:
-                h_total_NpT = next((h for h in self.output_list if h.GetName() == h_total_NpT_name), None)
-            if not h_total_NpT:
-                raise ValueError(f"h_total_NpT histogram '{h_total_NpT_name}' not found in output list.")
+            # Case 2: Qn vector histograms
 
-            # Define histogram names
-            hname = f'h_{column_name}_{centrality}'
-            h_Qn_component = ROOT.TH2F(hname, hname, max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5, len(bins) - 1, bins)
-            h_Qn_component.Sumw2()
+            # Lazy initialization for the component histogram
+            has_valid_event_component = False
 
-            # Fill the component histogram
+            # Fill the component histogram with event-by-event centrality check
             for i, particle_data in enumerate(col):
                 if particle_data is not None:
+                    # Check if the current event's centrality is accepted
+                    if not self.centrality_accepted(centrality, event_index=i):
+                        continue
+
+                    # Create the component histogram only if the first valid event is found
+                    if not has_valid_event_component:
+                        hname = f'h_{column_name}_{centrality}'
+                        h_Qn_component = ROOT.TH2F(hname, hname, 
+                                                   max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5, 
+                                                   len(bins) - 1, bins)
+                        h_Qn_component.Sumw2()
+                        has_valid_event_component = True
+
+                    # Fill the component histogram
                     event_id = self.event_id[i]
                     for value in particle_data:
                         pt = value[0]  # pT value
                         component = value[1]  # Real or imaginary component
                         h_Qn_component.Fill(event_id, pt, component)
 
-            # Append the normalized histogram to the output list
-            self.output_list.append(h_Qn_component)
+            # Append the component histogram to the output list only if it was created
+            if has_valid_event_component:
+                self.output_list.append(h_Qn_component)
 
             return
 
         # Non-v2 variables
-        hname = f'h_{column_name}_{centrality}{pt_suffix}'
-        h = ROOT.TH1F(hname, hname, len(bins)-1, bins)
-        h.Sumw2()
+
+        # Flag to check if any valid event exists
+        has_valid_event = False
+        h = None
 
         # Get pt bin
         pt_index = int(pt_suffix[-1])
         pt_min = block['pt'][pt_index]
-        pt_max = block['pt'][pt_index+1]
+        pt_max = block['pt'][pt_index + 1]
 
-        # Fill histogram for non-v2 observables
+        # Check for valid events and fill histogram
         for i, _ in enumerate(col):
             if col[i] is not None:
+                # Check if the current event's centrality is accepted
+                if not self.centrality_accepted(centrality, event_index=i):
+                    continue
+                # Create histogram only when the first valid event is found
+                if not has_valid_event:
+                    hname = f'h_{column_name}_{centrality}{pt_suffix}'
+                    h = ROOT.TH1F(hname, hname, len(bins) - 1, bins)
+                    h.Sumw2()
+                    has_valid_event = True
                 for value in col[i]:
                     if pt_min < value[0] < pt_max:
                         h.Fill(value[1], self.weights[i])
 
-        # Save histogram to output list
-        self.output_list.append(h)
+        # Save histogram only if it contains at least one valid event
+        if has_valid_event:
+            self.output_list.append(h)
 
     # ---------------------------------------------------------------
     # Check if event centrality is within observable's centrality
     # ---------------------------------------------------------------
-    def centrality_accepted(self, observable_centrality):
+    def centrality_accepted(self, observable_centrality, event_index=None):
 
         # AA
         if self.is_AA:
-
-            if self.full_centrality[0] >= observable_centrality[0]:
-                if self.full_centrality[1] <= observable_centrality[1]:
+            # Check event-by-event centrality if event_index is provided
+            if event_index is not None:
+                event_centrality_min = self.event_centrality_min[event_index]
+                event_centrality_max = self.event_centrality_max[event_index]
+                if event_centrality_min >= observable_centrality[0] and event_centrality_max <= observable_centrality[1]:
                     return True
+                return False
+            # Fallback to global centrality check if no event index is given (for backward compatibility)
+            if self.full_centrality[0] >= observable_centrality[0] and self.full_centrality[1] <= observable_centrality[1]:
+                return True
             return False
 
         # pp
