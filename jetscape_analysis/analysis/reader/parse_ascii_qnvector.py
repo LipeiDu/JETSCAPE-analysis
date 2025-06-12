@@ -6,15 +6,31 @@ from typing import Iterator, Union
 import attrs
 
 @attrs.frozen
+class QnGlobalMetadata:
+    pt_min: float
+    pt_max: float
+    n_pt: int
+    rap_min: float
+    rap_max: float
+    n_rap: int
+    n_order: int
+
+@attrs.frozen
 class QnHeaderInfo:
     event_number: int = attrs.field()
+    centrality: int = attrs.field()
 
 def _parse_qn_header_line(line: str) -> QnHeaderInfo:
     """Parse Qn vector event header line."""
     values = line.split()
     if "Event" in values:
-        event_number = int(values[2])  # Event number after "Event"
-        return QnHeaderInfo(event_number=event_number)
+        event_number = int(values[2])
+        if "centrality" in values:
+            centrality_index = values.index("centrality")
+            centrality = int(values[centrality_index + 1])
+        else:
+            centrality = -1
+        return QnHeaderInfo(event_number=event_number, centrality=centrality)
     raise ValueError(f"Invalid Qn header format: {line}")
 
 def _parse_qn_event(f: Iterator[str]) -> Iterator[Union[QnHeaderInfo, np.ndarray]]:
@@ -37,34 +53,51 @@ def _parse_qn_event(f: Iterator[str]) -> Iterator[Union[QnHeaderInfo, np.ndarray
             data = [float(x) if i else int(x) for i, x in enumerate(line.split())]
             current_event.append(data)
 
-def read_qn_events_in_chunks(filename: Path, events_per_chunk: int = 10000) -> Iterator[dict]:
-    """Read Qn vector events in chunks."""
+def read_qn_events_in_chunks(filename: Path, events_per_chunk: int = 10000) -> Iterator[tuple[QnGlobalMetadata, dict]]:
+    """Read Qn vector events in chunks, and parse global metadata."""
     filename = Path(filename)
     with open(filename, "r") as f:
         read_lines = iter(f)
-        current_chunk = {"event_headers": [], "particle_data": []}
+        global_metadata = None
+        for line in read_lines:
+            if line.startswith("#") and "pTmin" in line:
+                tokens = line.strip("# \n").split()
+                # Read values from known keys
+                pt_min = float(tokens[tokens.index("pTmin") + 1])
+                pt_max = float(tokens[tokens.index("pTmax") + 1])
+                n_pt = int(tokens[tokens.index("NpT") + 1])
+                rap_min = float(tokens[tokens.index("rapmin") + 1])
+                rap_max = float(tokens[tokens.index("rapmax") + 1])
+                n_rap = int(tokens[tokens.index("Nrap") + 1])
+                n_order = int(tokens[tokens.index("Norder") + 1])
+                global_metadata = QnGlobalMetadata(pt_min, pt_max, n_pt, rap_min, rap_max, n_rap, n_order)
+                break  # stop reading headers
+
+        assert global_metadata is not None, "Global metadata line not found in file."
+
+        current_chunk = {"event_headers": [], "centralities": [], "particle_data": []}
         event_count = 0
 
         for header, particles in _parse_qn_event(read_lines):
-            # Directly append without creating intermediate lists
             current_chunk["event_headers"].append(header.event_number)
+            current_chunk["centralities"].append(header.centrality)
             current_chunk["particle_data"].append(particles)
 
             event_count += 1
             if event_count >= events_per_chunk:
-                yield current_chunk
-                current_chunk = {"event_headers": [], "particle_data": []}
+                yield global_metadata, current_chunk
+                current_chunk = {"event_headers": [], "centralities": [], "particle_data": []}
                 event_count = 0
 
         if current_chunk["event_headers"]:
-            yield current_chunk
+            yield global_metadata, current_chunk
 
 def parse_qn_to_parquet(base_output_filename: str, input_filename: str, events_per_chunk: int):
     """Parse Qn vector ASCII and convert it to Parquet."""
     base_output_filename = Path(base_output_filename)
     base_output_filename.parent.mkdir(parents=True, exist_ok=True)
 
-    for i, chunk in enumerate(read_qn_events_in_chunks(input_filename, events_per_chunk)):
+    for i, (metadata, chunk) in enumerate(read_qn_events_in_chunks(input_filename, events_per_chunk)):
         # Directly stack without creating intermediate lists
         particle_data = np.vstack(chunk["particle_data"])
 
@@ -86,8 +119,32 @@ def parse_qn_to_parquet(base_output_filename: str, input_filename: str, events_p
         dN = particle_data[:, dN_column_index].astype(np.int32)
 
         # Efficiently use Awkward Array for structured data
+        num_particles_per_event = [len(p) for p in chunk["particle_data"]]
+        num_total_particles = particle_data.shape[0]
+
+        # Repeat per-event info
+        event_ids = np.repeat(chunk["event_headers"], num_particles_per_event)
+        centralities = np.repeat(chunk["centralities"], num_particles_per_event)
+
+        # Repeat global metadata (same for all rows)
+        pt_min = np.full(num_total_particles, metadata.pt_min, dtype=np.float32)
+        pt_max = np.full(num_total_particles, metadata.pt_max, dtype=np.float32)
+        n_pt = np.full(num_total_particles, metadata.n_pt, dtype=np.int32)
+        rap_min = np.full(num_total_particles, metadata.rap_min, dtype=np.float32)
+        rap_max = np.full(num_total_particles, metadata.rap_max, dtype=np.float32)
+        n_rap = np.full(num_total_particles, metadata.n_rap, dtype=np.int32)
+        n_order = np.full(num_total_particles, metadata.n_order, dtype=np.int32)
+
         ak_array = ak.Array({
-            "event_ID": np.repeat(chunk["event_headers"], [len(p) for p in chunk["particle_data"]]),
+            "event_ID": event_ids,
+            "centrality": centralities,
+            "pt_min": pt_min,
+            "pt_max": pt_max,
+            "n_pt": n_pt,
+            "rap_min": rap_min,
+            "rap_max": rap_max,
+            "n_rap": n_rap,
+            "n_order": n_order,
             "pid": particle_data[:, 0].astype(np.int32),
             "pT": particle_data[:, 1].astype(np.float32),
             "pT_err": particle_data[:, 2].astype(np.float32),
