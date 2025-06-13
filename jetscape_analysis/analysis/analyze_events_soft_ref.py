@@ -74,19 +74,19 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                 self.default_centrality = [int(centrality_string[1]), int(centrality_string[2])]
             except Exception as e:
                 raise RuntimeError(f"Failed to extract centrality from precomputed hydro tag: {e}")
-            self.centrality = self.default_centrality
+            self.full_centrality_range = self.default_centrality
 
         elif self.soft_sector_execution_type == "real_time_hydro":
             # Event-by-event centrality from Parquet file
             self.use_event_based_centrality = True
-            self.centrality = _run_info["centrality"]
+            self.full_centrality_range = _run_info["centrality"]
 
         else:
             # Legacy or unknown mode — fall back to original approach
             self.default_centrality = _run_info.get("centrality", None)
             if self.default_centrality is None:
                 raise ValueError("Centrality range must be specified in _info.yaml.")
-            self.centrality = self.default_centrality
+            self.full_centrality_range = self.default_centrality
 
         # Calculate the offset for event IDs
         self.original_data_file_index = _file_index  # Store the original data file index
@@ -165,7 +165,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         # Read Qn vector data; select charged particles with pid 9999
         all_events, total_events = self.reader_parquet(self.input_file, pids=[9999])
 
-        print(f"Total events in centrality {self.centrality}: {total_events}")
+        print(f"Total events in centrality {self.full_centrality_range}: {total_events}")
         min_event_id = min(all_events.keys())
         max_event_id = max(all_events.keys())
 
@@ -177,7 +177,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         kinematic_cuts = {}  # Store kinematic cuts for each observable
         relevant_observables = []  # Store relevant observables for all events
 
-        # Loop through each observable within the observable type and initialize histograms & kinematic cuts
+        # Loop through each observable within the observable type and initialize kinematic cuts
         for observable_type in self.config.keys():
             if observable_type not in ['hadron', 'hadron_correlations']:
                 continue
@@ -185,54 +185,31 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
             for observable, block in self.config[observable_type].items():
                 # pT spectra of charged particles
                 if observable_type == 'hadron' and observable.startswith('pt_ch'):
-                    if not self.centrality_accepted(block['centrality']):
-                        continue  # Skip if centrality doesn't match
-
-                    # Extract kinematic cuts
-                    eta_cut = block['eta_cut']
-                    pt_min, pt_max = block['pt'] # these two are not used for spectra calculation
-
-                    kinematic_cuts[(observable_type, observable, tuple(self.centrality))] = (eta_cut, pt_min, pt_max)
-
-                    # Initialize histograms for hadron observables (e.g., pt_ch_alice)
-                    result_histograms[(observable_type, observable, tuple(self.centrality))] = self.initialize_result_histograms(
-                        observable_type, observable, None, self.centrality, min_event_id=None, max_event_id=None
-                    )
-
-                    # Add to relevant observables
-                    relevant_observables.append((observable_type, observable, None))
+                    for cent_range in block['centrality']:  # loop over all measured centrality bins
+                        cent_key = tuple(cent_range)
+                        kinematic_cuts[(observable_type, observable, None, cent_key)] = (block['eta_cut'], *block['pt'])
+                        relevant_observables.append((observable_type, observable, None, cent_key))
 
                 # v2 of charged particles
                 elif observable_type == 'hadron_correlations' and "v2" in observable:
-                    # Loop through methods (EP, SP, etc.)
-                    for method, method_block in block.items(): 
+                    for method, method_block in block.items():
+                        for cent_range in method_block['centrality']:  # loop over all measured centrality bins
+                            cent_key = tuple(cent_range)
+                            kinematic_cuts[(observable_type, observable, method, cent_key)] = (
+                                method_block['eta_cut'],
+                                method_block['eta_min_ref'],
+                                method_block['eta_max_ref']
+                            )
+                            relevant_observables.append((observable_type, observable, method, cent_key))
 
-                        if not self.centrality_accepted(method_block['centrality']):
-                            continue  # Skip if centrality doesn't match
-
-                        # Extract kinematic cuts
-                        eta_cut = method_block['eta_cut']
-                        eta_min_ref = method_block['eta_min_ref']
-                        eta_max_ref = method_block['eta_max_ref']
-
-                        kinematic_cuts[(observable_type, observable, method, tuple(self.centrality))] = (eta_cut, eta_min_ref, eta_max_ref)
-
-                        # Initialize histograms for hadron correlations (e.g., v2 observables)
-                        result_histograms[(observable_type, observable, method, tuple(self.centrality))] = self.initialize_result_histograms(
-                            observable_type, observable, method, self.centrality, min_event_id, max_event_id
-                        )
-
-                        # Add to relevant observables
-                        relevant_observables.append((observable_type, observable, method))
-
-        # Initialize accumulators for pt_ch observables
-        pt_ch_accumulators = {observable: {'pt_values': [], 'dNdpTdy_values': []} for observable_type, observable, method in relevant_observables
-                              if observable_type == 'hadron' and observable.startswith('pt_ch')}
-        
+        # Initialize accumulators for pt_ch observables & qn vector histograms
+        pt_ch_accumulators = {}
         self.qnvector_histograms = {}
 
-        # Process events
-        for event_id, event in all_events.items():
+        for event_id, event_info in all_events.items():
+            # Extract particle list and centrality
+            event = event_info["particles"]
+            event_cent = event_info["centrality"]
 
             if event_id % 1000 == 0:
                 print(f"Processing event_id: {event_id}, entries: {len(event)}")
@@ -242,8 +219,11 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                 if observable_type not in ['hadron', 'hadron_correlations']:
                     continue
 
-                # Filter relevant observables for the current observable_type
-                current_observables = [(obs, method) for obs_type, obs, method in relevant_observables if obs_type == observable_type]
+                current_observables = [
+                    (obs, method, cent_key)
+                    for obs_type, obs, method, cent_key in relevant_observables
+                    if obs_type == observable_type
+                ]
                 if not current_observables:
                     continue
 
@@ -251,21 +231,36 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                 self.initialize_qnvector_histogram(observable_type)
                 self.fill_parquet_qnvector_histogram(event, observable_type)
 
-                # Process event-specific calculations per observable
-                for observable, method in current_observables:
+                for observable, method, cent_key in current_observables:
+                    # Decide if event belongs to this measured centrality bin
+                    if self.use_event_based_centrality:
+                        if not (cent_key[0] <= event_cent < cent_key[1]):
+                            continue
+                    else:
+                        if cent_key != tuple(self.full_centrality_range):
+                            continue
 
-                    key = (observable_type, observable, tuple(self.centrality)) if observable_type == 'hadron' else \
-                          (observable_type, observable, method, tuple(self.centrality))
+                    # Use updated key with cent_key
+                    key = (observable_type, observable, method, cent_key)
+
+                    if key not in result_histograms:
+                        result_histograms[key] = self.initialize_result_histograms(
+                            observable_type, observable, method, list(cent_key),
+                            min_event_id=min_event_id, max_event_id=max_event_id
+                        )
+
+                    cuts = kinematic_cuts[(observable_type, observable, method, cent_key)]
                     histograms = result_histograms[key]
-                    cuts = kinematic_cuts[key]
 
                     if observable_type == 'hadron' and observable.startswith('pt_ch'):
                         eta_cut, pt_min, pt_max = cuts
                         results = self.process_qnvector_histogram(event_id, observable_type, observable, eta_cut, None, None)
 
-                        # Accumulate results for event-averaging later
-                        pt_ch_accumulators[observable]['pt_values'].extend(results['pt_values'])
-                        pt_ch_accumulators[observable]['dNdpTdy_values'].extend(results['dNdpTdy_values'])
+                        acc_key = (observable, cent_key)  # include centrality in key
+                        if acc_key not in pt_ch_accumulators:
+                            pt_ch_accumulators[acc_key] = {'pt_values': [], 'dNdpTdy_values': []}
+                        pt_ch_accumulators[acc_key]['pt_values'].extend(results['pt_values'])
+                        pt_ch_accumulators[acc_key]['dNdpTdy_values'].extend(results['dNdpTdy_values'])
 
                     elif observable_type == 'hadron_correlations' and "v2" in observable:
                         eta_cut, eta_min_ref, eta_max_ref = cuts
@@ -277,20 +272,23 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                 # Clear histograms for this observable_type after processing
                 self.clear_qnvector_histograms(observable_type)
 
-        # Finalize and save event-averaged histograms for `pt_ch` observables
-        for observable, accumulator in pt_ch_accumulators.items():
+        # Finalize accumulators per (observable, cent_bin)
+        for (observable, cent_key), accumulator in pt_ch_accumulators.items():
             pt_values = np.array(accumulator['pt_values'])
             dNdpTdy_values = np.array(accumulator['dNdpTdy_values'])
 
             # Group by unique pt bins and calculate averages
             unique_pt = np.unique(pt_values)
+            histograms = result_histograms[('hadron', observable, None, cent_key)]
             for pt in unique_pt:
                 indices = np.where(pt_values == pt)
                 avg_dNdpTdy = np.mean(dNdpTdy_values[indices])
-
-                # Fill the final histogram
-                histograms = result_histograms[('hadron', observable, tuple(self.centrality))]
                 histograms['hist_dNdpT'].Fill(pt, avg_dNdpTdy)
+
+        # QA: Fill centrality histogram (e.g., 5% bins)
+        centrality_hist = self.fill_event_centrality_histogram(all_events, bin_width=1)
+        # Save to output ROOT file
+        centrality_hist.Write()
 
         # Write histograms for all observables to the output ROOT file
         for histograms in result_histograms.values():
@@ -551,29 +549,52 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # Initialize histograms for results
     # ---------------------------------------------------------------
     def initialize_result_histograms(self, observable_type, observable, method, centrality, min_event_id, max_event_id):
-
+        """
+        Initialize histograms for the given observable and centrality bin.
+        """
         histograms = {}
 
         if observable_type == 'hadron' and observable.startswith('pt_ch'):
             base_name = f"h_{observable_type}_{observable}_{centrality}"
-
-            # For 'hadron' observable type, initialize histogram for pt only (not event-by-event)
-            histograms['hist_dNdpT'] = ROOT.TH1F(f"{base_name}", f"{base_name}", self.n_pt_bins, self.pt_min, self.pt_max)
+            histograms['hist_dNdpT'] = ROOT.TH1F(
+                base_name,
+                base_name,
+                self.n_pt_bins, self.pt_min, self.pt_max
+            )
 
         if observable_type == 'hadron_correlations' and "v2" in observable:
-            base_name = f"h_{observable_type}_{observable}_{method}"
+            if min_event_id is None or max_event_id is None:
+                raise ValueError("min_event_id and max_event_id must be provided for correlation observables.")
 
-            # Use min_event_id and max_event_id for the x-axis range
-            histograms['hist_dNdeta'] = ROOT.TH1F(f"{base_name}_dNchdeta_{centrality}", f"{base_name}_dNchdeta_{centrality}", max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5)
-            histograms['hist_N_Qn_ref'] = ROOT.TH1F(f"{base_name}_Qn0_{centrality}_ref", f"{base_name}_Qn0_{centrality}_ref", max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5)
+            base_name = f"h_{observable_type}_{observable}_{method}_{centrality}"
+
+            histograms['hist_dNdeta'] = ROOT.TH1F(
+                f"{base_name}_dNchdeta",
+                f"{base_name}_dNchdeta",
+                max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5
+            )
+
+            histograms['hist_N_Qn_ref'] = ROOT.TH1F(
+                f"{base_name}_Qn0_ref",
+                f"{base_name}_Qn0_ref",
+                max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5
+            )
 
             histograms['hist_Qn_ref_real'] = {
-                n: ROOT.TH1F(f"{base_name}_Qn{n}_real_{centrality}_ref", f"{base_name}_Qn{n}_real_{centrality}_ref", max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5)
+                n: ROOT.TH1F(
+                    f"{base_name}_Qn{n}_real_ref",
+                    f"{base_name}_Qn{n}_real_ref",
+                    max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5
+                )
                 for n in range(1, self.norder)
             }
 
             histograms['hist_Qn_ref_imag'] = {
-                n: ROOT.TH1F(f"{base_name}_Qn{n}_imag_{centrality}_ref", f"{base_name}_Qn{n}_imag_{centrality}_ref", max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5)
+                n: ROOT.TH1F(
+                    f"{base_name}_Qn{n}_imag_ref",
+                    f"{base_name}_Qn{n}_imag_ref",
+                    max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5
+                )
                 for n in range(1, self.norder)
             }
 
@@ -638,21 +659,36 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         for event_id in np.unique(ak.to_numpy(data["event_ID"])):
             event_mask = data["event_ID"] == event_id
             event_data = data[event_mask].to_list()  # Convert to Python list for compatibility
-            all_events[int(event_id)] = event_data
+            event_centrality = float(ak.to_numpy(data[event_mask]["centrality"])[0])
+            all_events[int(event_id)] = {
+                "particles": event_data,
+                "centrality": event_centrality
+            }
 
         total_events = len(all_events)
         return all_events, total_events
 
     # ---------------------------------------------------------------
-    # Check if event centrality is within observable's centrality
+    # Create and fill a QA histogram that counts the number of events in each centrality bin.
     # ---------------------------------------------------------------
-    def centrality_accepted(self, observable_centrality_list):
+    def fill_event_centrality_histogram(self, all_events, bin_width=1):
+        """
+        Returns:
+            ROOT histogram showing number of events per centrality bin.
+        """
 
-        for observable_centrality in observable_centrality_list:
-            if self.centrality[0] >= observable_centrality[0]:
-                if self.centrality[1] <= observable_centrality[1]:
-                    return True
-        return False
+        assert 100 % bin_width == 0, "Centrality bin width must evenly divide 100"
+
+        nbins = 100 // bin_width
+        h_centrality = ROOT.TH1D("h_event_centrality", "Event Count vs Centrality;Centrality [%];# of Events", 
+                                 nbins, 0, 100)
+
+        for event_data in all_events.values():
+            cent = event_data.get("centrality", None)
+            if cent is not None:
+                h_centrality.Fill(cent)
+
+        return h_centrality
 
 ##################################################################
 if __name__ == "__main__":
