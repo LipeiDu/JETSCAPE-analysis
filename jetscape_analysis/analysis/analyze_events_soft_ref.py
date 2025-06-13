@@ -425,7 +425,10 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
             # I. Obtain 1D arrays in pT from 2D histograms in pT and rapidity of a single event (with oversamples summed over)
 
             # List of particle number in pT around midrapidity
+            pt_values = []
             dN_values = []
+            vncos_values = {n: [] for n in range(1, self.norder)}
+            vnsin_values = {n: [] for n in range(1, self.norder)}
 
             # Reference lists in pT for a different rapidity range
             pt_ref_values = []
@@ -438,6 +441,8 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
                 pt = self.hist_dN.GetXaxis().GetBinCenter(bin_x)
                 dN_sum, dN_ref_sum = 0.0, 0.0
+                vncos_sum = {n: 0.0 for n in range(1, self.norder)}
+                vnsin_sum = {n: 0.0 for n in range(1, self.norder)}
                 vncos_ref_sum = {n: 0.0 for n in range(1, self.norder)}
                 vnsin_ref_sum = {n: 0.0 for n in range(1, self.norder)}
 
@@ -450,6 +455,12 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                     if abs(y) < eta_cut:
                         dN_sum += dN
 
+                        for n in range(1, self.norder):
+                            vncos = self.hist_vncos[n].GetBinContent(bin_x, bin_y)
+                            vnsin = self.hist_vnsin[n].GetBinContent(bin_x, bin_y)
+                            vncos_sum[n] += vncos * dN
+                            vnsin_sum[n] += vnsin * dN
+
                     # reference particles
                     if eta_min_ref <= y <= eta_max_ref:
                         dN_ref_sum += dN
@@ -461,7 +472,11 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
                 # Append the summed values for this pT bin if dN_sum > 0
                 if dN_sum > 0:
+                    pt_values.append(pt)
                     dN_values.append(dN_sum)
+                    for n in range(1, self.norder):
+                        vncos_values[n].append(vncos_sum[n] / dN_sum)
+                        vnsin_values[n].append(vnsin_sum[n] / dN_sum)
 
                 # Append the reference values for this pT bin if dN_ref_sum > 0
                 if dN_ref_sum > 0:
@@ -470,13 +485,17 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
                     # Normalize vncos_ref_sum and vnsin_ref_sum by dN_ref_sum for each harmonic n
                     for n in range(1, self.norder):
-                        vncos_ref_values[n].append(vncos_ref_sum[n] / dN_ref_sum if dN_ref_sum > 0 else 0.0)
-                        vnsin_ref_values[n].append(vnsin_ref_sum[n] / dN_ref_sum if dN_ref_sum > 0 else 0.0)
+                        vncos_ref_values[n].append(vncos_ref_sum[n] / dN_ref_sum)
+                        vnsin_ref_values[n].append(vnsin_ref_sum[n] / dN_ref_sum)
 
             # II. Multiplicity calculation
 
             # Convert lists to arrays for further processing
+            pt_values = np.array(pt_values)
             dN_values = np.array(dN_values)
+            for n in range(1, self.norder):
+                vncos_values[n] = np.array(vncos_values[n])
+                vnsin_values[n] = np.array(vnsin_values[n])
 
             # Ensure there are valid entries for interpolation
             if len(dN_values) == 0:
@@ -499,18 +518,19 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                 vnsin_ref_values[n] = np.array(vnsin_ref_values[n])
 
             # pT array for interpolation
-            npT, pT_low, pT_high = self.npT, self.pT_low, self.pT_high
-            pT_inte_array = np.linspace(pT_low, pT_high, npT)
+            pT_inte_array = np.linspace(self.pT_low, self.pT_high, self.npT)
 
-            # vn for reference particles
-            N_Qn_ref = {}
-            Qn_ref_real_array = {}
-            Qn_ref_imag_array = {}
-            
-            N_Qn_ref, Qn_ref_real_array, Qn_ref_imag_array = self.calculate_diff_vn_single_event(pT_inte_array, pt_ref_values, dN_ref_values, vncos_ref_values, vnsin_ref_values)
+            N_Qn_pT, Qn_pT_real_array, Qn_pT_imag_array, N_Qn_ref, Qn_ref_real_array, Qn_ref_imag_array = \
+                self.calculate_diff_vn_single_event(
+                    pT_inte_array, pt_ref_values, dN_ref_values, vncos_ref_values, vnsin_ref_values,
+                    pt_values, dN_values, vncos_values, vnsin_values)
 
             return {
+                "pt_values": pt_values,
                 "dNdeta": dNdeta,
+                "N_Qn_pT": N_Qn_pT,
+                "Qn_pT_real": Qn_pT_real_array,
+                "Qn_pT_imag": Qn_pT_imag_array,
                 "N_Qn_ref": N_Qn_ref,
                 "Qn_ref_real": Qn_ref_real_array,
                 "Qn_ref_imag": Qn_ref_imag_array,
@@ -519,31 +539,38 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
     # ---------------------------------------------------------------
     # Calculate vn for a single event
     # ---------------------------------------------------------------
-    def calculate_diff_vn_single_event(self, pT_inte_array, pt_ref_values, dN_ref_values, vncos_ref_values, vnsin_ref_values):
+    def calculate_diff_vn_single_event(self, pT_inte_array, pt_ref_values, dN_ref_values, vncos_ref_values, vnsin_ref_values,
+                                       pt_values, dN_values, vncos_values, vnsin_values):
         """
-        This function computes pT-differential vn{4} and vn{SP} for a single event using reference particle data.
+        This function computes pT-differential Qn vectors for reference and POI particles.
         """
         dpT = pT_inte_array[1] - pT_inte_array[0]
 
+        # Reference particle integration
         dN_ref_interp = np.exp(np.interp(pT_inte_array, pt_ref_values, np.log(dN_ref_values + 1e-30)))
         N_Qn_ref = np.sum(dN_ref_interp) * dpT / 0.1
 
         Qn_ref_real_array = []
         Qn_ref_imag_array = []
+        Qn_pT_real_array = []
+        Qn_pT_imag_array = []
 
         for iorder in range(1, self.norder):
+            # Reference
             vn_ref_real_interp = np.interp(pT_inte_array, pt_ref_values, vncos_ref_values[iorder])
             vn_ref_imag_interp = np.interp(pT_inte_array, pt_ref_values, vnsin_ref_values[iorder])
-            vn_ref_real_inte = (
-                np.sum(vn_ref_real_interp * dN_ref_interp) / np.sum(dN_ref_interp)
-            )
-            vn_ref_imag_inte = (
-                np.sum(vn_ref_imag_interp * dN_ref_interp) / np.sum(dN_ref_interp)
-            )
+            vn_ref_real_inte = np.sum(vn_ref_real_interp * dN_ref_interp) / np.sum(dN_ref_interp)
+            vn_ref_imag_inte = np.sum(vn_ref_imag_interp * dN_ref_interp) / np.sum(dN_ref_interp)
             Qn_ref_real_array.append(N_Qn_ref * vn_ref_real_inte)
             Qn_ref_imag_array.append(N_Qn_ref * vn_ref_imag_inte)
 
-        return N_Qn_ref, Qn_ref_real_array, Qn_ref_imag_array
+            # POI Qn(pT)
+            Qn_pt_real = dN_values * vncos_values[iorder]
+            Qn_pt_imag = dN_values * vnsin_values[iorder]
+            Qn_pT_real_array.append(Qn_pt_real)
+            Qn_pT_imag_array.append(Qn_pt_imag)
+
+        return dN_values, Qn_pT_real_array, Qn_pT_imag_array, N_Qn_ref, Qn_ref_real_array, Qn_ref_imag_array
 
     # ---------------------------------------------------------------
     # Initialize histograms for results
@@ -598,6 +625,33 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                 for n in range(1, self.norder)
             }
 
+            histograms['hist_N_Qn_pT'] = ROOT.TH2F(
+                f"{base_name}_Q0",
+                f"{base_name}_Q0",
+                max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5,
+                self.n_pt_bins, self.pt_min, self.pt_max
+            )
+
+            histograms['hist_Qn_pT_real'] = {
+                n: ROOT.TH2F(
+                    f"{base_name}_Qn{n}_real",
+                    f"{base_name}_Qn{n}_real",
+                    max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5,
+                    self.n_pt_bins, self.pt_min, self.pt_max
+                )
+                for n in range(1, self.norder)
+            }
+
+            histograms['hist_Qn_pT_imag'] = {
+                n: ROOT.TH2F(
+                    f"{base_name}_Qn{n}_imag",
+                    f"{base_name}_Qn{n}_imag",
+                    max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5,
+                    self.n_pt_bins, self.pt_min, self.pt_max
+                )
+                for n in range(1, self.norder)
+            }
+
         return histograms
 
     # ---------------------------------------------------------------
@@ -615,6 +669,20 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
             for n in range(1, self.norder):
                 histograms['hist_Qn_ref_real'][n].Fill(event_id, results["Qn_ref_real"][n - 1])
                 histograms['hist_Qn_ref_imag'][n].Fill(event_id, results["Qn_ref_imag"][n - 1])
+
+            if 'hist_N_Qn_pT' in histograms:
+                pt_values = results["pt_values"]
+                N_Qn_pT = results["N_Qn_pT"]
+                Qn_pT_real = results["Qn_pT_real"]
+                Qn_pT_imag = results["Qn_pT_imag"]
+
+                for i, pt in enumerate(pt_values):
+                    histograms['hist_N_Qn_pT'].Fill(event_id, pt, N_Qn_pT[i])
+
+                for n in range(1, self.norder):
+                    for i, pt in enumerate(pt_values):
+                        histograms['hist_Qn_pT_real'][n].Fill(event_id, pt, Qn_pT_real[n - 1][i])
+                        histograms['hist_Qn_pT_imag'][n].Fill(event_id, pt, Qn_pT_imag[n - 1][i])
 
     # ---------------------------------------------------------------
     # Write histograms of results
