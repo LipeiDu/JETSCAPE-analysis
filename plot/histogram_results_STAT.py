@@ -675,7 +675,7 @@ class HistogramResults(common_base.CommonBase):
                         event_id = self.event_id[i]
                         for value in particle_data:
                             pt = value[0]  # pT value
-                            h_total_NpT.Fill(event_id, pt, 1)  # Increment particle count
+                            h_total_NpT.Fill(event_id, pt, self.weights[i])  # Increment particle count
 
                 # Append the total_NpT histogram to the output list if it was created
                 if has_valid_event and h_total_NpT_name not in [h.GetName() for h in self.output_list]:
@@ -709,7 +709,7 @@ class HistogramResults(common_base.CommonBase):
                     for value in particle_data:
                         pt = value[0]  # pT value
                         component = value[1]  # Real or imaginary component
-                        h_Qn_component.Fill(event_id, pt, component)
+                        h_Qn_component.Fill(event_id, pt, component * self.weights[i])
 
             # Append the component histogram to the output list only if it was created
             if has_valid_event_component:
