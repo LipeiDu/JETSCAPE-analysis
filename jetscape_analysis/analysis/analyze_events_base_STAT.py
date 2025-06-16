@@ -186,6 +186,10 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
                     self.observable_dict_event['centrality_max'] = self.centrality[1]
 
                 self.output_event_list.append(self.observable_dict_event)
+            else:
+                # Track skipped event IDs explicitly
+                self.observable_dict_event['skipped_event_id'] = event['event_ID'] + self.event_id_offset
+                self.output_event_list.append(self.observable_dict_event)
 
         # Get total cross-section (same for all events at this point), weight sum, and centrality
         self.cross_section_dict['cross_section'] = event['cross_section']

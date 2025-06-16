@@ -74,6 +74,12 @@ class HistogramResults(common_base.CommonBase):
         self.weights = self.observables_df.get('event_weight', [])
         self.pt_hat = self.observables_df.get('pt_hat', [])
         self.event_id = self.observables_df.get('event_id', [])
+        self.skipped_event_id = self.observables_df.get('skipped_event_id', [])
+        all_event_ids = np.union1d(self.event_id, self.skipped_event_id)
+        # Calculate the range of event IDs
+        self.min_event_id = int(all_event_ids.min())
+        self.max_event_id = int(all_event_ids.max())
+
         self.event_centrality_min = self.observables_df.get('centrality_min', [])
         self.event_centrality_max = self.observables_df.get('centrality_max', [])
 
@@ -644,10 +650,6 @@ class HistogramResults(common_base.CommonBase):
             h_total_NpT = None
             h_Qn_component = None
 
-            # Calculate the range of event IDs
-            min_event_id = min(self.event_id)
-            max_event_id = max(self.event_id)
-
             has_valid_event = False
 
             # Case 1: Compute total_NpT only
@@ -664,7 +666,7 @@ class HistogramResults(common_base.CommonBase):
                         # Create histogram only if the first valid event is found
                         if not has_valid_event:
                             h_total_NpT = ROOT.TH2F(h_total_NpT_name, h_total_NpT_name, 
-                                                    max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5, 
+                                                    self.max_event_id - self.min_event_id + 1, self.min_event_id - 0.5, self.max_event_id + 0.5, 
                                                     len(bins) - 1, bins)
                             h_total_NpT.Sumw2()
                             has_valid_event = True
@@ -697,7 +699,7 @@ class HistogramResults(common_base.CommonBase):
                     if not has_valid_event_component:
                         hname = f'h_{column_name}_{centrality}'
                         h_Qn_component = ROOT.TH2F(hname, hname, 
-                                                   max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5, 
+                                                   self.max_event_id - self.min_event_id + 1, self.min_event_id - 0.5, self.max_event_id + 0.5, 
                                                    len(bins) - 1, bins)
                         h_Qn_component.Sumw2()
                         has_valid_event_component = True

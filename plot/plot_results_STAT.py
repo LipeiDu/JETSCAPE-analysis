@@ -962,10 +962,12 @@ class PlotResults(common_base.CommonBase):
 
                 # POI
                 h_N_pT = poi_settings['h_N_pT']
-                h_Qn_component = {n: {
-                    'real': poi_settings[f'h_Qn{n}_real'],
-                    'imag': poi_settings[f'h_Qn{n}_imag']
-                } for n in range(1, self.norder)}
+                h_Qn_component = {
+                    n: {
+                        'real': poi_settings[f'h_Qn{n}_real'],
+                        'imag': poi_settings[f'h_Qn{n}_imag']
+                    } for n in range(1, self.norder)
+                }
 
                 # reference
                 h_N_ref = ref_settings['h_N_ref']
@@ -976,32 +978,45 @@ class PlotResults(common_base.CommonBase):
                 # Prepare arrays for QnpT_diff and Qnref
                 QnpT_diff_array, Qnref_array = [], []
 
-                # Loop over events
-                for event_id in range(1, h_N_pT.GetNbinsX() + 1):
+                # Extract true event IDs from histogram x-axis bin centers
+                nbins_x = h_N_pT.GetNbinsX()
+                nbins_y = h_N_pT.GetNbinsY()
+                event_ids = [int(h_N_pT.GetXaxis().GetBinCenter(i)) for i in range(1, nbins_x + 1)]
 
-                    # POI particle counts and Qn vectors
-                    N_pT = np.array([h_N_pT.GetBinContent(event_id, pt_bin) 
-                                        for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
+                for bin_idx, event_id in enumerate(event_ids, start=1):
+                    N_pT = np.array([
+                        h_N_pT.GetBinContent(bin_idx, pt_bin)
+                        for pt_bin in range(1, nbins_y + 1)
+                    ])
+                    if np.sum(N_pT) < 1e-6:
+                        continue
+
                     QnpT_diff_event = [N_pT]
                     for n in range(1, self.norder):
-                        Qn_pT_real = np.array([h_Qn_component[n]['real'].GetBinContent(event_id, pt_bin)
-                                               for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
-                        Qn_pT_imag = np.array([h_Qn_component[n]['imag'].GetBinContent(event_id, pt_bin)
-                                               for pt_bin in range(1, h_N_pT.GetNbinsY() + 1)])
+                        Qn_pT_real = np.array([
+                            h_Qn_component[n]['real'].GetBinContent(bin_idx, pt_bin)
+                            for pt_bin in range(1, nbins_y + 1)
+                        ])
+                        Qn_pT_imag = np.array([
+                            h_Qn_component[n]['imag'].GetBinContent(bin_idx, pt_bin)
+                            for pt_bin in range(1, nbins_y + 1)
+                        ])
                         QnpT_diff_event.append(Qn_pT_real + 1j * Qn_pT_imag)
+
                     QnpT_diff_array.append(QnpT_diff_event)
 
-                    # Reference particle counts and Qn vectors
-                    N_ref = h_N_ref.GetBinContent(event_id)
+                    N_ref = h_N_ref.GetBinContent(bin_idx)
+                    if N_ref < 1e-6:
+                        continue
+
                     Qnref_event = [N_ref]
                     for n in range(1, self.norder):
-                        Qn_ref_real = h_Qn_ref_real[n].GetBinContent(event_id)
-                        Qn_ref_imag = h_Qn_ref_imag[n].GetBinContent(event_id)
+                        Qn_ref_real = h_Qn_ref_real[n].GetBinContent(bin_idx)
+                        Qn_ref_imag = h_Qn_ref_imag[n].GetBinContent(bin_idx)
                         Qnref_event.append(Qn_ref_real + 1j * Qn_ref_imag)
                     Qnref_array.append(Qnref_event)
 
-                # Calculate integrated flow v2 using SP or 4-particle methods
-                # Determine which vn calculation method to use based on the input `method`
+                # Calculate vn
                 if method == "_ep":
                     vn_result = self.calculate_vn_event_plane_diff(QnpT_diff_array, Qnref_array)
                 elif method == "_sp":
@@ -1011,25 +1026,18 @@ class PlotResults(common_base.CommonBase):
                 else:
                     raise ValueError(f"Unsupported flow calculation method: {method}")
 
-                # Extract the vn results and errors for all n
-                vn_values = vn_result[0]
-                vn_errors = vn_result[1]
+                vn_values, vn_errors = vn_result
 
-                # Extract pT bin edges from the y-axis of h_N_pT
+                # Extract pT bin edges and create histograms
                 pt_bin_edges = [
-                    h_N_pT.GetYaxis().GetBinLowEdge(pt_bin) for pt_bin in range(1, h_N_pT.GetNbinsY() + 2)
+                    h_N_pT.GetYaxis().GetBinLowEdge(pt_bin)
+                    for pt_bin in range(1, nbins_y + 2)
                 ]
-                
-                num_pt_bins = len(pt_bin_edges) - 1  # Number of bins is one less than the number of edges
-                # Convert pt_bin_edges to a numpy array of type double
                 pt_bin_edges_array = np.array(pt_bin_edges, dtype='d')
 
-                # Save the results for each harmonic order in separate histograms
                 for n, (vn_vals, vn_errs) in enumerate(zip(vn_values, vn_errors), start=1):
-                    
-                    # Create a histogram for v_n at order n
                     hname = f'h_{observable_type}_{observable}{method}_v{n}_{centrality}{subtraction_label}'
-                    h_vn = ROOT.TH1F(hname, hname, num_pt_bins, pt_bin_edges_array)  # Using array for bin edges
+                    h_vn = ROOT.TH1F(hname, hname, len(pt_bin_edges) - 1, pt_bin_edges_array)
                     h_vn.Sumw2()
 
                     # Fill the histogram with v_n values and errors
