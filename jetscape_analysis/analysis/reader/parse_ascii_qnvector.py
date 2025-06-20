@@ -27,7 +27,7 @@ def _parse_qn_header_line(line: str) -> QnHeaderInfo:
         event_number = int(values[2])
         if "centrality" in values:
             centrality_index = values.index("centrality")
-            centrality = int(values[centrality_index + 1])
+            centrality = float(values[centrality_index + 1])
         else:
             centrality = -1
         return QnHeaderInfo(event_number=event_number, centrality=centrality)

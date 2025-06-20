@@ -626,8 +626,8 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
             }
 
             histograms['hist_N_Qn_pT'] = ROOT.TH2F(
-                f"{base_name}_Q0",
-                f"{base_name}_Q0",
+                f"{base_name}_Qn0",
+                f"{base_name}_Qn0",
                 max_event_id - min_event_id + 1, min_event_id - 0.5, max_event_id + 0.5,
                 self.n_pt_bins, self.pt_min, self.pt_max
             )
