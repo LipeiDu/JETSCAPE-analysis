@@ -629,16 +629,16 @@ class PlotResults(common_base.CommonBase):
         if 'Qn_ref' not in self.observable_settings:
 
             keys_soft = [key.ReadObj().GetTitle() for key in self.soft_ref_file.GetListOfKeys()]
-            base_name = f"h_{observable_type}_{observable}{method}"
+            base_name = f"h_{observable_type}_{observable}{method}_{centrality}"
 
-            self.observable_settings['jetscape_distribution']['h_N_ref'] = self.soft_ref_file.Get(f"{base_name}_Qn0_{centrality}_ref")
+            self.observable_settings['jetscape_distribution']['h_N_ref'] = self.soft_ref_file.Get(f"{base_name}_Qn0_ref")
 
             self.observable_settings['jetscape_distribution']['h_Qn_ref_real'] = {}
             self.observable_settings['jetscape_distribution']['h_Qn_ref_imag'] = {}
 
             for n in range(1, self.norder): 
-                real_name_ref = f"{base_name}_Qn{n}_real_{centrality}_ref"
-                imag_name_ref = f"{base_name}_Qn{n}_imag_{centrality}_ref"
+                real_name_ref = f"{base_name}_Qn{n}_real_ref"
+                imag_name_ref = f"{base_name}_Qn{n}_imag_ref"
                 h_real_ref = self.soft_ref_file.Get(real_name_ref)
                 h_imag_ref = self.soft_ref_file.Get(imag_name_ref)
                 if h_real_ref:
