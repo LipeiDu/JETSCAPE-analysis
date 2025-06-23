@@ -1,4 +1,4 @@
-# This is a cleaned-up version of your script, focusing solely on soft sector observables
+# This is a cleaned-up version focusing solely on soft sector observables
 # Jet observables and pp/RAA-related logic are removed
 
 import os
@@ -52,6 +52,9 @@ class PlotSoftSectorResults(common_base.CommonBase):
         self.line_style = 1
         self.file_format = '.pdf'
 
+    #-------------------------------------------------------------------------------------------
+    # Functions
+    #-------------------------------------------------------------------------------------------
     def plot_results(self):
         self.plot_hadron_observables()
         self.plot_hadron_correlation_observables()
@@ -75,6 +78,9 @@ class PlotSoftSectorResults(common_base.CommonBase):
                         self.init_observable('hadron_correlations', observable, method_block, centrality, centrality_index, method=f'_{method}')
                         self.plot_observable('hadron_correlations', observable, centrality, method=f'_{method}')
 
+    #-------------------------------------------------------------------------------------------
+    # Functions
+    #-------------------------------------------------------------------------------------------
     def init_observable(self, observable_type, observable, block, centrality, centrality_index, method='', pt_suffix='', self_normalize=False):
         self.observable_settings = {}
         self.xtitle = block.get('xtitle', '')
@@ -83,6 +89,7 @@ class PlotSoftSectorResults(common_base.CommonBase):
         self.y_max = block.get('y_max_AA', 0.3)
         self.y_ratio_min = block.get('y_ratio_min', 0.)
         self.y_ratio_max = block.get('y_ratio_max', 1.99)
+        self.eta_cut = block.get('eta_cut', 1.0)
         self.logy = block.get('logy', False)
 
         self.suffix = ''
@@ -90,8 +97,12 @@ class PlotSoftSectorResults(common_base.CommonBase):
         self.init_model_distribution(observable_type, observable, method, block, centrality, pt_suffix, self_normalize)
 
     def init_data_distribution(self, block, observable_type, observable, centrality_index, pt_suffix):
+        if observable_type == "hadron":
+            include_pT_spectra = True
+        if observable_type == "hadron_correlations":
+            include_pT_spectra = False
         if 'hepdata' in block:
-            self.observable_settings['data_distribution'] = self.plot_utils.tgraph_from_hepdata(block, self.is_AA, self.sqrts, observable_type, observable, centrality_index, suffix=self.suffix, pt_suffix=pt_suffix, pT_spectra=self.include_pT_spectra)
+            self.observable_settings['data_distribution'] = self.plot_utils.tgraph_from_hepdata(block, self.is_AA, self.sqrts, observable_type, observable, centrality_index, suffix=self.suffix, pt_suffix=pt_suffix, pT_spectra=include_pT_spectra)
         elif 'custom_data' in block:
             self.observable_settings['data_distribution'] = self.plot_utils.tgraph_from_yaml(
                 block, True, self.sqrts, observable_type, observable, centrality_index, suffix=self.suffix, pt_suffix=pt_suffix)
@@ -105,6 +116,15 @@ class PlotSoftSectorResults(common_base.CommonBase):
             if not h or not h.InheritsFrom("TH1"):
                 return False
             h.SetDirectory(0)
+
+            # Apply physical scaling for soft hadron pT spectra
+            if observable.startswith('pt_'):  # apply to pT spectra only
+                if hasattr(self, 'eta_cut'):
+                    h.Scale(1. / (2. * self.eta_cut))
+                else:
+                    print(f"[WARN] eta_cut not defined; skipping eta normalization for {hname}")
+                h.Scale(1. / (2. * np.pi))
+
             self.observable_settings['jetscape_distribution'] = h
             return True
 
@@ -140,6 +160,9 @@ class PlotSoftSectorResults(common_base.CommonBase):
 
         return False
 
+    #-------------------------------------------------------------------------------------------
+    # Functions
+    #-------------------------------------------------------------------------------------------
     def plot_observable(self, observable_type, observable, centrality, method='', pt_suffix='', logy=False):
         label = f'{observable_type}_{observable}{method}_{centrality}{pt_suffix}'
 
@@ -151,12 +174,11 @@ class PlotSoftSectorResults(common_base.CommonBase):
 
         # Plot depending on type
         if observable_type == 'hadron_correlations' and 'v2' in observable:
-            self.plot_distribution_and_ratio(label, logy=False)
+            self.plot_v2_distribution(label, logy=False)
         elif observable_type == 'hadron':
             self.plot_pT_spectra(label)
 
-
-    def plot_distribution_and_ratio(self, label, logy=False):
+    def plot_v2_distribution(self, label, logy=False):
         settings = self.observable_settings['jetscape_distribution']
 
         n = 2  # harmonic order
@@ -276,11 +298,6 @@ class PlotSoftSectorResults(common_base.CommonBase):
 
         c.SaveAs(os.path.join(self.output_dir, f"{label}_v2{self.file_format}"))
         c.Close()
-
-
-
-
-
 
     def plot_pT_spectra(self, label):
         settings = self.observable_settings

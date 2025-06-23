@@ -14,7 +14,7 @@ pt_max: 6.
 n_y_bins: 80
 y_min: -4
 y_max: 4
-n_order: 7 # the maximum n is n_order-1
+norder: 7 # the maximum n is n_order-1
 n_oversample: 10 # number of oversamples in each event
 
 selected_pid: [9999] # here only charged particles are considered
