@@ -75,10 +75,17 @@ class HistogramResults(common_base.CommonBase):
         self.pt_hat = self.observables_df.get('pt_hat', [])
         self.event_id = self.observables_df.get('event_id', [])
         self.skipped_event_id = self.observables_df.get('skipped_event_id', [])
-        all_event_ids = np.union1d(self.event_id, self.skipped_event_id)
+
+        event_id_array = np.array(self.event_id)
+        skipped_event_id_array = np.array(self.skipped_event_id)
+        event_id_clean = event_id_array[~np.isnan(event_id_array)]
+        skipped_event_id_clean = skipped_event_id_array[~np.isnan(skipped_event_id_array)]
+
+        all_event_ids = np.union1d(event_id_clean, skipped_event_id_clean)
+
         # Calculate the range of event IDs
-        self.min_event_id = int(all_event_ids.min())
-        self.max_event_id = int(all_event_ids.max())
+        self.min_event_id = int(np.nanmin(all_event_ids))
+        self.max_event_id = int(np.nanmax(all_event_ids))
 
         self.event_centrality_min = self.observables_df.get('centrality_min', [])
         self.event_centrality_max = self.observables_df.get('centrality_max', [])

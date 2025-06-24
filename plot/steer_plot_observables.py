@@ -65,7 +65,7 @@ def main():
 
     soft_sector_analysis = True
 
-    final_state_hadron_dir = '/home/jetscape-user/JETSCAPE-STAT-output/Dirac_mar25/Run1010_2'
+    final_state_hadron_dir = '/home/jetscape-user/JETSCAPE-STAT-output/Dirac_mar31/Run1020_june23'
     final_state_hadron_files = [file for file in os.listdir(final_state_hadron_dir) if 'jetscape' in file]
     system = final_state_hadron_files[0].split('_')[1]
 
@@ -76,7 +76,7 @@ def main():
     #       and only the merging/plotting step is needed to be run locally
     construct_observables = False
     construct_histograms = False
-    merge_histograms = True
+    merge_histograms = False
     plot_histograms = True
 
     #-----------------------------------------------------------------
@@ -170,6 +170,13 @@ def main():
         inputdir = os.path.join(final_state_hadron_dir, 'plot')
         fname = f'histograms_{system}_{sqrts}_merged.root'
         input_file = os.path.join(inputdir, fname)
+
+        if not merge_histograms:
+            if soft_sector_analysis:
+                soft_fname = f'histograms_{system}_{sqrts}_soft_reference.root'
+                soft_reference_filename = os.path.join(inputdir, soft_fname)
+            else:
+                soft_reference_filename = ''
 
         if system == 'pp':
             cmd = f'python3 plot/plot_results_STAT.py -c config/STAT_{sqrts}.yaml -i {input_file}'

@@ -131,7 +131,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
 
             self.norder = int(row["n_order"])
 
-        except KeyError:
+        except Exception:
             # Fallback to config
             # parameters of Qn vector writer in JETSCAPE; has to be consistent with JS XML
             self.n_pt_bins = self.config['n_pt_bins']
@@ -237,7 +237,7 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
                         if not (cent_key[0] <= event_cent < cent_key[1]):
                             continue
                     else:
-                        if cent_key != tuple(self.full_centrality_range):
+                        if cent_key[1] <= self.full_centrality_range[0] or cent_key[0] >= self.full_centrality_range[1]:
                             continue
 
                     # Use updated key with cent_key
@@ -727,7 +727,12 @@ class AnalyzeJetscapeEvents_Base(common_base.CommonBase):
         for event_id in np.unique(ak.to_numpy(data["event_ID"])):
             event_mask = data["event_ID"] == event_id
             event_data = data[event_mask].to_list()  # Convert to Python list for compatibility
-            event_centrality = float(ak.to_numpy(data[event_mask]["centrality"])[0])
+            if "centrality" in data.fields:
+                event_centrality = float(ak.to_numpy(data[event_mask]["centrality"])[0])
+            else:
+                # Use full_centrality_range from config if not stored in Parquet
+                event_centrality = 0.5 * (self.full_centrality_range[0] + self.full_centrality_range[1])
+
             all_events[int(event_id)] = {
                 "particles": event_data,
                 "centrality": event_centrality

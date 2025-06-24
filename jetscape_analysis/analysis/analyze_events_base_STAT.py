@@ -179,6 +179,7 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
 
                 # Add event ID to the dictionary; histograms are saved event-by-event for vn calculations
                 self.observable_dict_event['event_id'] = event['event_ID'] + self.event_id_offset # Adjust event IDs by adding the calculated offset
+                self.observable_dict_event['skipped_event_id'] = np.nan  # Mark skipped_event_id explicitly as NaN
 
                 # Add event-wise centrality (same for all events in precomputed_hydro; varies event-by-event for real_time_hydro)
                 if self.is_AA:
@@ -188,7 +189,9 @@ class AnalyzeJetscapeEvents_BaseSTAT(common_base.CommonBase):
                 self.output_event_list.append(self.observable_dict_event)
             else:
                 # Track skipped event IDs explicitly
-                self.observable_dict_event['skipped_event_id'] = event['event_ID'] + self.event_id_offset
+                skipped_id = event['event_ID'] + self.event_id_offset
+                self.observable_dict_event['skipped_event_id'] = skipped_id
+                self.observable_dict_event['event_id'] = np.nan  # Explicitly mark event_id as missing
                 self.output_event_list.append(self.observable_dict_event)
 
         # Get total cross-section (same for all events at this point), weight sum, and centrality
